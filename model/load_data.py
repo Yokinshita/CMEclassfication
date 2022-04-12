@@ -16,7 +16,7 @@ def read_imgarray_from_singlepic(path_to_pic:str):
 
     Returns:
     -------
-    img         : 图片数组，形状为高*宽*1
+    img         : 图片数组，形状为1*高*宽
     """
 
     # png图片是P模式，要转换为L模式（灰度）
@@ -34,7 +34,7 @@ def read_imgarray_from_folder(path_to_folder: str):
     path_to_folder   : 数据所属的根文件夹路径
     Returns:
     -------
-    imgarray         : 某个文件夹下所有图片组成的数组，形状为数量*高*宽*通道
+    imgarray         : 某个文件夹下所有图片组成的数组，形状为数量*通道*高*宽
     """
 
     pics = os.listdir(path_to_folder)
@@ -198,7 +198,7 @@ class CMEdata:
             feature = self.test_data
             label = self.test_label
         # 转换为tensor
-        # todo 还可以在这里添加transform变换
+        # TODO 还可以在这里添加transform变换
         feature = torch.from_numpy(feature)
         label = torch.from_numpy(label)
 
