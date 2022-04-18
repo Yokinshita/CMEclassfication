@@ -1,8 +1,10 @@
+import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 
 
 class Net(nn.Module):
+
     def __init__(self, num_classes=2, drop_prob=0.5):
         super().__init__()
         # input_size 1*224*224
@@ -49,15 +51,20 @@ class Net(nn.Module):
         x = self.conv5(x)
         out = self.fc(x.view(x.shape[0], -1))
         return out
+    
+    def load_param(self, model_path):
+        map_location = torch.device(
+            'cuda') if torch.cuda.is_available() else torch.device('cpu')
+        self.load_state_dict(torch.load(model_path, map_location))
 
 
 class LeNet5(nn.Module):
+
     def __init__(self, num_classes=2, drop_prob=0.5):
         super().__init__()
         self.drop_prob = drop_prob
         self.conv1 = nn.Conv2d(1, 6, 5, padding=2)
         self.conv2 = nn.Conv2d(6, 16, 5)
-
         self.resize = transforms.Resize(224)
         #input N*1*224*224
         self.conv1 = nn.Sequential(
@@ -68,14 +75,13 @@ class LeNet5(nn.Module):
             nn.Conv2d(20, 50, 5),  #N*50*106*106
             nn.ReLU(),
             nn.MaxPool2d(2, 2))  #N*50*53*53
-        self.fc = nn.Sequential(
-            nn.Linear(50 * 53 * 53, 120), 
-            nn.ReLU(),
-            nn.Dropout(drop_prob), 
-            nn.Linear(120, 84),
-            nn.ReLU(), 
-            nn.Dropout(drop_prob),
-            nn.Linear(84, 2))
+        self.fc = nn.Sequential(nn.Linear(50 * 53 * 53, 120), 
+                                nn.ReLU(),
+                                nn.Dropout(drop_prob), 
+                                nn.Linear(120, 84),
+                                nn.ReLU(), 
+                                nn.Dropout(drop_prob),
+                                nn.Linear(84, 2))
 
     def forward(self, x):
         x = self.resize(x)
@@ -83,3 +89,8 @@ class LeNet5(nn.Module):
         x = self.conv2(x)
         out = self.fc(x.view(x.shape[0], -1))
         return out
+
+    def load_param(self, model_path):
+        map_location = torch.device(
+            'cuda') if torch.cuda.is_available() else torch.device('cpu')
+        self.load_state_dict(torch.load(model_path, map_location))

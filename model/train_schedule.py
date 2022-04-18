@@ -35,8 +35,7 @@ class ModelTrain:
             self.optimizer, self.step_size, self.gamma)
         self.current_time = time.strftime("%Y_%m_%d_%H_%M_%S",
                                           time.localtime())
-        self.log_path = os.path.join(os.getcwd(), 'log',
-                                            self.current_time)
+        self.log_path = os.path.join(os.getcwd(), 'log', self.current_time)
         self.writer = SummaryWriter(self.log_path)
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
@@ -71,13 +70,21 @@ class ModelTrain:
         def default(self, obj):
             if isinstance(obj, torch.nn.Module):
                 return repr(obj.__class__)
-            if isinstance(obj,torch.optim.lr_scheduler._LRScheduler):
+            if isinstance(obj, torch.optim.lr_scheduler._LRScheduler):
                 return repr(obj.__class__)
             return json.JSONEncoder.default(self, obj)
 
     def __save_para_info(self, train_info_path):
         pos = self.cmedata.train_label.sum().item()
         neg = self.cmedata.size - pos
+        para_dict = {}
+        para_dict['lr'] = self.lr
+        para_dict['num_epochs'] = self.num_epochs
+        para_dict['batch_size'] = self.batch_size
+        para_dict['drop_prob'] = self.drop_prob
+        para_dict['selected_remarks'] = self.selected_remarks
+        para_dict['train_percentage'] = self.train_percentage
+        para_dict['scheduler_step_size'] = self.step_size
         para_dict['CME_count'] = pos
         para_dict['No_CME_count'] = neg
         para_dict['CME:NO CME'] = '{}:1'.format(pos / neg)
@@ -93,8 +100,7 @@ class ModelTrain:
         self.__save_para_info(self.log_path)
         torch.save(self.net.state_dict(),
                    os.path.join(self.log_path, 'parameters.pkl'))
-        print('Save training detailed infomation to {}'.format(
-            self.log_path))
+        print('Save training detailed infomation to {}'.format(self.log_path))
 
     def evaluate_accuracy_on(self, X, y):
         """
@@ -205,10 +211,10 @@ class ModelTrain:
                     'epoch_time': time.time() - current_epoch_start,
                     'total_time': time.time() - train_start
                 }
-                self.__log(epoch_train_loss,
-                           epoch_train_accu,
+                self.__log(epoch_train_loss, 
+                           epoch_train_accu, 
                            test_loss,
-                           test_accu,
+                           test_accu, 
                            self.optimizer.param_groups[0]['lr'],
                            epoch)
                 self.train_details_list.append(epoch_detail_dict)
@@ -261,8 +267,8 @@ def create_folder(path_to_folder):
 
 
 if __name__ == '__main__':
-    para_dict = configuration.para_dict
-    modeltrain = ModelTrain(para_dict=para_dict, Net=model_defination.LeNet5)
+    modeltrain = ModelTrain(para_dict=configuration.para_dict,
+                            Net=model_defination.LeNet5)
     modeltrain.fit()
     modeltrain.save_info()
     resu = modeltrain.infer(
