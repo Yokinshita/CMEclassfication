@@ -7,5 +7,7 @@ para_dict = {
     'selected_remarks': ['Halo', 'No Remark', 'Partial Halo'],
     'train_percentage': 0.7,
     'scheduler_step_size': 1,
-    'gamma': 0.1
+    'gamma': 0.1,
+    'log_path': r'.\log',
+    'aloud': True
 }

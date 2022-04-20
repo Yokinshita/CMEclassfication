@@ -20,14 +20,15 @@ class ModelTrain:
 
     def __init__(self, para_dict, Net, forcing_load_from_pic=False) -> None:
         self.save_location = para_dict['save_location']
-        self.lr = para_dict['lr']
+        self.lr = para_dict['learning_rate']
         self.num_epochs = para_dict['num_epochs']
         self.batch_size = para_dict['batch_size']
         self.drop_prob = para_dict['drop_prob']
         self.selected_remarks = para_dict['selected_remarks']
         self.train_percentage = para_dict['train_percentage']
-        self.step_size = para_dict['scheduler_step_size']
+        self.step_size = para_dict['step_size']
         self.gamma = para_dict['gamma']
+        self.aloud = para_dict['aloud']
         self.net = Net(drop_prob=self.drop_prob)
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.net.parameters(), lr=self.lr)
@@ -35,7 +36,7 @@ class ModelTrain:
             self.optimizer, self.step_size, self.gamma)
         self.current_time = time.strftime("%Y_%m_%d_%H_%M_%S",
                                           time.localtime())
-        self.log_path = os.path.join(os.getcwd(), 'log', self.current_time)
+        self.log_path = os.path.join(para_dict['log_path'], self.current_time)
         self.writer = SummaryWriter(self.log_path)
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
@@ -77,22 +78,22 @@ class ModelTrain:
     def __save_para_info(self, train_info_path):
         pos = self.cmedata.train_label.sum().item()
         neg = self.cmedata.size - pos
-        para_dict = {}
-        para_dict['lr'] = self.lr
-        para_dict['num_epochs'] = self.num_epochs
-        para_dict['batch_size'] = self.batch_size
-        para_dict['drop_prob'] = self.drop_prob
-        para_dict['selected_remarks'] = self.selected_remarks
-        para_dict['train_percentage'] = self.train_percentage
-        para_dict['scheduler_step_size'] = self.step_size
-        para_dict['CME_count'] = pos
-        para_dict['No_CME_count'] = neg
-        para_dict['CME:NO CME'] = '{}:1'.format(pos / neg)
-        para_dict['Net'] = self.net
-        para_dict['lr_scheduler'] = self.scheduler
+        para = {}
+        para['lr'] = self.lr
+        para['num_epochs'] = self.num_epochs
+        para['batch_size'] = self.batch_size
+        para['drop_prob'] = self.drop_prob
+        para['selected_remarks'] = self.selected_remarks
+        para['train_percentage'] = self.train_percentage
+        para['scheduler_step_size'] = self.step_size
+        para['CME_count'] = pos
+        para['No_CME_count'] = neg
+        para['CME:NO CME'] = '{}:1'.format(pos / neg)
+        para['Net'] = self.net
+        para['lr_scheduler'] = self.scheduler
         filename = os.path.join(train_info_path, 'para.json')
         with open(filename, 'w') as f:
-            json.dump(para_dict, f, cls=ModelTrain._ModuleEncoder)
+            json.dump(para, f, cls=ModelTrain._ModuleEncoder)
 
     def save_info(self):
         self.__create_folder(self.log_path)
@@ -171,8 +172,14 @@ class ModelTrain:
         print('----------------------')
         print('Begin training:')
         print('total {} epoches, {} iterations each epoch'.format(
-            self.num_epochs, int(self.cmedata.train_size / self.batch_size)))
-        pbar = tqdm(total=total_iterations)
+            self.num_epochs, int(self.cmedata.train_size / self.batch_size) + 1))
+        # 如果在终端输出更多信息，则tqdm的total应为总的iteration数，在每个batch结束后更新pbar
+        # 如果不需要输出更多信息，则tqdm的total应为总的epoch数，在每个epoch结束后更新pbar
+        if self.aloud:
+            pbar = tqdm(total=total_iterations)
+        else:
+            pbar = tqdm(total=self.num_epochs)
+        pbar.set_description('epoch {} iteration {}'.format(1, 1))
         train_start = time.time()
         # 记录每次epoch情况的列表
         self.train_details_list = []
@@ -196,12 +203,18 @@ class ModelTrain:
                         dim=1) == y).sum().cpu().item()
                     n += y.shape[0]
                     batch_count += 1
-                    pbar.set_description('epoch {} iteration {}'.format(
-                        epoch + 1, iteration_count))
-                    pbar.update(1)
+                    if self.aloud:
+                        pbar.set_description('epoch {} iteration {}'.format(
+                            epoch + 1, iteration_count))
+                        pbar.update(1)
                 test_accu, test_loss = self.__evaluate_on_testiter(test_iter)
                 epoch_train_loss = train_l_sum / batch_count
                 epoch_train_accu = train_acc_sum / n
+                # 如果aloud为False，则每个epoch之后才更新一次pbar
+                if not self.aloud:
+                    pbar.set_description('epoch {} iteration {}'.format(
+                        epoch + 1, iteration_count))
+                    pbar.update(1)
                 epoch_detail_dict = {
                     'epoch_num': epoch,
                     'epoch_train_loss': epoch_train_loss,
@@ -211,10 +224,10 @@ class ModelTrain:
                     'epoch_time': time.time() - current_epoch_start,
                     'total_time': time.time() - train_start
                 }
-                self.__log(epoch_train_loss, 
-                           epoch_train_accu, 
+                self.__log(epoch_train_loss,
+                           epoch_train_accu,
                            test_loss,
-                           test_accu, 
+                           test_accu,
                            self.optimizer.param_groups[0]['lr'],
                            epoch)
                 self.train_details_list.append(epoch_detail_dict)
@@ -248,22 +261,6 @@ class ModelTrain:
         y = self.net(img)
         #resu = torch.argmax(self.net(img), dim=1)
         return y
-
-
-def save_para_info(para_dict, cmedata, path_to_folder):
-    pos = cmedata.train_label.sum().item()
-    neg = cmedata.size - pos
-    para_dict['CME_count'] = pos
-    para_dict['No_CME_count'] = neg
-    para_dict['CME:NO CME'] = '{}:1'.format(pos / neg)
-    filename = os.path.join(path_to_folder, 'para.json')
-    with open(filename, 'w') as f:
-        json.dump(para_dict, f)
-
-
-def create_folder(path_to_folder):
-    if not os.path.exists(path_to_folder):
-        os.makedirs(path_to_folder)
 
 
 if __name__ == '__main__':
