@@ -145,3 +145,4 @@ cython_debug/
 ./工作笔记.py
 工作笔记.py
 largestcomponenttest.py
+*.py.pclprof
