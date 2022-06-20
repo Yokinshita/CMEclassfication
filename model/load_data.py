@@ -22,7 +22,8 @@ def read_imgarray_from_singlepic(path_to_pic: str, transform):
     img = Image.open(path_to_pic).convert('L')
     img = np.array(img, dtype=np.float32)
     img = np.expand_dims(img, 0)  # 增加一个维度，变成通道*高*宽的形式
-    img = transform(img)
+    if transform:
+        img = transform(img)
     return img
 
 
@@ -158,7 +159,7 @@ class CMEdata:
         self.save_location = save_location
         self.selected_remarks = selected_remarks
         self.train_percentage = train_percentage
-        self.trans = torchvision.transforms.Compose([CenterCrop()])
+        self.trans = CenterCrop()
 
     def __random_split(self, data: np.ndarray, labels: np.ndarray,
                        train_percentage: float):
