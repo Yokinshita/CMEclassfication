@@ -77,7 +77,7 @@ class ModelTrain:
 
     def __save_para_info(self, train_info_path):
         pos = self.cmedata.train_label.sum().item()
-        neg = self.cmedata.size - pos
+        neg = self.cmedata.train_label.shape[0] - pos
         para = {}
         para['lr'] = self.lr
         para['num_epochs'] = self.num_epochs
