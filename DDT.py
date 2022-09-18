@@ -1,10 +1,11 @@
 from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
-import model.train_schedule
-import model.model_defination
 import torch
+import torch.nn.functional as F
 from scipy.interpolate import griddata
+import cv2
+import utils
 import os
 from typing import Union
 
@@ -42,9 +43,23 @@ def arrayToPic(array: np.ndarray) -> Image.Image:
 
 
 def drawImageArray(img: np.ndarray):
+    '''绘出图像数组
+
+    Parameters
+    ----------
+    img : np.ndarray
+        需要绘制的图像数组，形状为NHW或者NHWC
+    '''
     for i in range(img.shape[0]):
         plt.figure(figsize=(7.07, 7.07))
-        plt.imshow(img[i], cmap='gray')
+        if img.ndim == 3:
+            plt.imshow(img[i], cmap='gray')
+        elif img.ndim == 4:
+            plt.imshow(img[i])
+        else:
+            raise ValueError(
+                'Input array dimension must be 3(NHW) or 4(NHWC), got {}'.
+                format(img.ndim))
         plt.xticks(())
         plt.yticks(())
 
@@ -65,6 +80,14 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
 
 
 def drawImageArrays(*arrays):
+    '''绘出多个图像数组
+    
+    Parameters
+    ----------
+    *array : np.ndarray
+        需要绘制的数组，形状应当均为NHW
+
+    '''
     column = len(arrays)
     row = arrays[0].shape[0]
     for array in arrays:
@@ -413,7 +436,7 @@ def getDDTIndicatorMat(imgs: np.ndarray, net: torch.nn.Module) -> np.ndarray:
     #此处indicatorMats的类型之前为np.int8，导致结果出现错误
     indicatorMats = np.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3]))
     for i in range(imgs.shape[0]):
-        print('Processing pic {}/{}'.format(i + 1, imgs.shape[0]))
+        # print('Processing pic {}/{}'.format(i + 1, imgs.shape[0]))
         indicatorMat = getIndicatorMatrix(activation, i, prinCompVector)
         reSizedIndicator = reSize(indicatorMat)
         indicatorMats[i] = reSizedIndicator
@@ -441,3 +464,131 @@ def getReverseLargeComp(largecomp: np.ndarray) -> np.ndarray:
         reverlargecomp = getLargestConnectedComponent(mask, componentIndex)
         reverseLargeCompArray[i] = reverlargecomp
     return reverseLargeCompArray
+
+
+def pca(features):
+    '''对特征图进行主成分分析，得到经过第一主成分投影变换的特征图
+
+    Parameters
+    ----------
+    features : torch.Tensor
+        需要进行PCA的特征图，形状为NCHW
+
+    Returns
+    -------
+    torch.Tensor
+        经过PCA变换的特征图，形状为NHW
+    '''
+    k = features.shape[0] * features.shape[2] * features.shape[3]
+    x_mean = (features.sum(dim=2).sum(dim=2).sum(dim=0) /
+              k).unsqueeze(0).unsqueeze(2).unsqueeze(2)
+    features = features - x_mean
+
+    reshaped_features = features.contiguous().view(features.shape[0], features.shape[1], -1)\
+        .permute(1, 0, 2).contiguous().view(features.shape[1], -1)
+
+    cov = torch.matmul(reshaped_features, reshaped_features.t()) / k
+    # torch.eig函数将在未来版本被弃用，修改为torch.linalg.eig
+    # eigval, eigvec = torch.eig(cov, eigenvectors=True)
+    # first_compo = eigvec[:, 0]
+
+    eigval, eigvec = torch.linalg.eig(cov)
+    first_compo = eigvec.real[:, 0]
+
+    projected_map = torch.matmul(first_compo.unsqueeze(0), reshaped_features).view(1, features.shape[0], -1)\
+        .view(features.shape[0], features.shape[2], features.shape[3])
+
+    maxv = projected_map.max()
+    minv = projected_map.min()
+
+    projected_map *= (maxv + minv) / torch.abs(maxv + minv)
+
+    return projected_map
+
+
+def DDTThirdParty(imgs: np.ndarray, net: torch.nn.Module):
+    '''对imgs进行DDT算法，返回经过投影变换后的特征图
+
+    Parameters
+    ----------
+    imgs : np.ndarray
+        需要进行变换的图像，形状为NCHW
+    net : torch.nn.Module
+        使用的CNN网络
+
+    Returns
+    -------
+    torch.Tensor
+        经过投影变换后的特征图，形状为NHW
+    '''
+    features = torch.from_numpy(DDT.getActivation(net, imgs))
+    features = utils.NHWCtoNCHW(features)  # pca的输入应当为HCHW
+    project_map = torch.clamp(pca(features), min=0)
+    maxv = project_map.view(project_map.size(0),
+                            -1).max(dim=1)[0].unsqueeze(1).unsqueeze(1)
+    project_map /= maxv
+
+    project_map = F.interpolate(
+        project_map.unsqueeze(1),
+        size=(imgs.shape[2], imgs.shape[3]),
+        mode='bilinear',
+        align_corners=False) * 255.
+
+    return project_map
+
+
+def colorMapImage(imgs: np.ndarray, project_map: torch.Tensor):
+    '''以DDT算法得到的投影特征图为mask，遮罩到原图片上。
+
+    Parameters
+    ----------
+    imgs : np.ndarray
+        原图片，形状为NCHW
+    project_map : torch.Tensor
+        DDT算法得到的投影特征图，形状为NHW
+    
+    Returns
+    ----------
+    output_imgs : np.ndarray
+        原图片和DDT算法得到的投影特征图遮罩到一起生成的图片，形状为NHWC
+    '''
+
+    output_imgs = np.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3], 3),
+                           dtype=np.uint8)
+    masks = np.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3], 3),
+                     dtype=np.uint8)
+    for i in range(imgs.shape[0]):
+        # img = cv2.resize(cv2.imread(os.path.join('./data', name)), (224, 224)) #读取为BGR格式
+        # 将project_map repeat为(3,H,W)再转置为(H,W,3)
+        # 这里的mask类似于自己的IndicatorMat
+        mask = project_map[i].repeat(3, 1, 1).permute(1, 2, 0).detach().numpy()
+        mask = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
+        # addWeighted接受的两个数组应当为同样形状：HWC，因此将imgs[i]转为HWC形状
+        img = np.tile(imgs[i], (3, 1, 1)).transpose(1, 2, 0).astype('uint8')
+        output_img = cv2.addWeighted(img, 0.5, mask, 0.5, 0.0)
+        output_imgs[i] = output_img
+    return output_imgs
+
+
+def maskToColorMap(project_maps: torch.Tensor):
+    '''将图像按照数值映射为颜色色阶图
+
+    Parameters
+    ----------
+    project_map : torch.Tensor
+        需要被映射的数组，形状为NCHW
+
+    Returns
+    -------
+    np.ndarray
+        颜色图，形状为NHWC
+    '''
+    colored_maps = np.zeros((project_maps.shape[0], project_maps.shape[2],
+                             project_maps.shape[3], 3),
+                            dtype=np.uint8)
+    for i in range(project_maps.shape[0]):
+        mask = project_maps[i].repeat(3, 1, 1).permute(1, 2,
+                                                       0).detach().numpy()
+        mask = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
+        colored_maps[i] = mask
+    return colored_maps

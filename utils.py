@@ -73,22 +73,28 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
 
 
 def drawImageArrays(*arrays):
+    '''绘制多个图像数组，这些图像数组应当具有同样的形状，为NHWC
+    
+    Parameters:
+    -----------
+    array : 待绘制的图像数组，形状为NHWC。
+    '''
     column = len(arrays)
     row = arrays[0].shape[0]
     for array in arrays:
         if row != array.shape[0]:
             raise ValueError(
-                'Shape of all array expected to be the same.Expected {} got {}'
+                'First dimension of all array expected to be the same. Expected {} got {}'
                 .format(row, array.shape[0]))
-        if array.ndim != 3:
-            raise ValueError(
-                'Array dimension expected to be 3 , got {}'.format(array.ndim))
-    plt.figure(figsize=(3.6 * column, 4 * row))
-    for i in range(row):
-        for j in range(column):
+    plt.figure(figsize=(4 * column, 4 * row))
+    for j in range(column):
+        for i in range(row):
             plt.subplot(row, column, i * column + j + 1)
             plt.title(str(i), fontsize=10, color='white')
-            plt.imshow(arrays[j][i], cmap='gray')
+            if arrays[j][i].shape[2] == 1:
+                plt.imshow(arrays[j][i], cmap='gray')  # 图片是灰度图的情况
+            elif arrays[j][i].shape[2] == 3:
+                plt.imshow(arrays[j][i])  # 图片是RGB的情况
             plt.xticks(())
             plt.yticks(())
     plt.show()
@@ -210,6 +216,10 @@ class CenterCrop:
                     image[i][0] = np.multiply(image[i][0],
                                               self.mask) + self.value
                 return image
+            else:
+                raise ValueError(
+                    'Input array dimensions expected to be 3 or 4, got {}'.
+                    format(image.ndim))
         if isinstance(image, torch.Tensor):
             mask = torch.from_numpy(self.mask)
             mask = torch.clone(mask)
@@ -220,6 +230,10 @@ class CenterCrop:
                 for i in range(image.shape[0]):
                     image[i][0] = torch.mul(image[i][0], mask) + self.value
                 return image
+            else:
+                raise ValueError(
+                    'Input array dimensions expected to be 3 or 4, got {}'.
+                    format(image.ndim))
 
 
 def showArrayRange(arr: np.ndarray) -> tuple:
@@ -251,3 +265,47 @@ def examinePerChannel(arr: np.ndarray) -> np.ndarray:
         differ02 = np.argwhere(arr[:, :][0] != arr[:, :][2])
         differ = np.concatenate((differ01, differ02), axis=0)
         return differ
+
+
+def NCHWtoNHWC(array: Union[np.ndarray, torch.Tensor]):
+    '''将数组由NCHW转换为NHWC
+
+    Parameters
+    ----------
+    array : Union[np.ndarray, torch.Tensor]
+        待转换的数组
+
+    Returns
+    -------
+    Union[np.ndarray,torch.Tensor]
+        NHWC形状的数组
+    '''
+    if isinstance(array, np.ndarray):
+        return array.transpose((0, 2, 3, 1))
+    elif isinstance(array, torch.Tensor):
+        return array.permute((0, 2, 3, 1))
+    else:
+        raise TypeError(
+            'Input array type should be np.ndarray or torch.Tensor')
+
+
+def NHWCtoNCHW(array: Union[np.ndarray, torch.Tensor]):
+    '''将数组由NHWC转换为NCHW
+
+    Parameters
+    ----------
+    array : Union[np.ndarray, torch.Tensor]
+        待转换的数组
+
+    Returns
+    -------
+    Union[np.ndarray,torch.Tensor]
+        NCHW形状的数组
+    '''
+    if isinstance(array, np.ndarray):
+        return array.transpose((0, 3, 1, 2))
+    elif isinstance(array, torch.Tensor):
+        return array.permute((0, 3, 1, 2))
+    else:
+        raise TypeError(
+            'Input array type should be np.ndarray or torch.Tensor')
