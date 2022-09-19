@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 import torch
+from natsort import natsorted
 from typing import Union
 
 
@@ -18,7 +19,7 @@ def loadSingleImg(path: str) -> np.ndarray:
     return img
 
 
-def loadImageFolder(path_to_folder: str) -> np.ndarray:
+def loadImageFolder(path_to_folder: str, ordering: bool = True) -> np.ndarray:
     """
     载入给定文件夹中的所有图片，形状为NCHW
 
@@ -26,6 +27,8 @@ def loadImageFolder(path_to_folder: str) -> np.ndarray:
     """
     pics = os.listdir(path_to_folder)
     # 首先载入第一张图片
+    if ordering is True:
+        pics = natsorted(pics)  #对文件按照名称排序
     imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]))
     for i in range(1, len(pics)):
         img = loadSingleImg(os.path.join(path_to_folder, pics[i]))

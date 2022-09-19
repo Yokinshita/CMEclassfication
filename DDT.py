@@ -6,107 +6,7 @@ import torch.nn.functional as F
 from scipy.interpolate import griddata
 import cv2
 import utils
-import os
 from typing import Union
-
-
-def loadSingleImg(path: str) -> np.ndarray:
-    """
-    载入单张图片，形状为NCHW
-    """
-    img = Image.open(path).convert('L')
-    img = np.array(img, dtype=np.float32)
-    img = np.expand_dims(img, 0)
-    img = np.expand_dims(img, 0)
-    # img = torch.from_numpy(img)
-    return img
-
-
-def loadImages(path_to_folder: str) -> np.ndarray:
-    """
-    载入给定文件夹中的所有图片，形状为NCHW
-
-    返回np.ndarray
-    """
-    pics = os.listdir(path_to_folder)
-    # 首先载入第一张图片
-    imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]))
-    for i in range(1, len(pics)):
-        img = loadSingleImg(os.path.join(path_to_folder, pics[i]))
-        imgs = np.concatenate((imgs, img), axis=0)
-    return imgs
-
-
-def arrayToPic(array: np.ndarray) -> Image.Image:
-    """将数组转换为图片"""
-    return Image.fromarray(255 * array.astype('int')).convert('L')
-
-
-def drawImageArray(img: np.ndarray):
-    '''绘出图像数组
-
-    Parameters
-    ----------
-    img : np.ndarray
-        需要绘制的图像数组，形状为NHW或者NHWC
-    '''
-    for i in range(img.shape[0]):
-        plt.figure(figsize=(7.07, 7.07))
-        if img.ndim == 3:
-            plt.imshow(img[i], cmap='gray')
-        elif img.ndim == 4:
-            plt.imshow(img[i])
-        else:
-            raise ValueError(
-                'Input array dimension must be 3(NHW) or 4(NHWC), got {}'.
-                format(img.ndim))
-        plt.xticks(())
-        plt.yticks(())
-
-
-def savefig(array: np.ndarray, path: str, preffix='pic'):
-    """保存数组为图片
-
-    Parameters
-    ----------
-    array : np.ndarray
-        需要保存的数组，形状为NHW
-    path : str
-        路径
-    """
-    for i in range(array.shape[0]):
-        Image.fromarray(array[i].astype('int')).convert('L').save(
-            os.path.join(path, preffix + '{}.png'.format(i)))
-
-
-def drawImageArrays(*arrays):
-    '''绘出多个图像数组
-    
-    Parameters
-    ----------
-    *array : np.ndarray
-        需要绘制的数组，形状应当均为NHW
-
-    '''
-    column = len(arrays)
-    row = arrays[0].shape[0]
-    for array in arrays:
-        if row != array.shape[0]:
-            raise ValueError(
-                'Shape of all array expected to be the same.Expected {} got {}'
-                .format(row, array.shape[0]))
-        if array.ndim != 3:
-            raise ValueError(
-                'Array dimension expected to be 3 , got {}'.format(array.ndim))
-    plt.figure(figsize=(3.6 * column, 4 * row))
-    for i in range(row):
-        for j in range(column):
-            plt.subplot(row, column, i * column + j + 1)
-            plt.title(str(i), fontsize=10, color='white')
-            plt.imshow(arrays[j][i], cmap='gray')
-            plt.xticks(())
-            plt.yticks(())
-    plt.show()
 
 
 def getActivation(net: torch.nn.Module, x: Union[torch.Tensor,
@@ -518,33 +418,34 @@ def DDTThirdParty(imgs: np.ndarray, net: torch.nn.Module):
 
     Returns
     -------
-    torch.Tensor
-        经过投影变换后的特征图，形状为NHW
+    np.ndarray
+        经过投影变换后的特征图，形状为NCHW
     '''
-    features = torch.from_numpy(DDT.getActivation(net, imgs))
+    features = torch.from_numpy(getActivation(net, imgs))
     features = utils.NHWCtoNCHW(features)  # pca的输入应当为HCHW
     project_map = torch.clamp(pca(features), min=0)
     maxv = project_map.view(project_map.size(0),
                             -1).max(dim=1)[0].unsqueeze(1).unsqueeze(1)
     project_map /= maxv
 
-    project_map = F.interpolate(
-        project_map.unsqueeze(1),
-        size=(imgs.shape[2], imgs.shape[3]),
-        mode='bilinear',
-        align_corners=False) * 255.
+    project_map = F.interpolate(project_map.unsqueeze(1),
+                                size=(imgs.shape[2], imgs.shape[3]),
+                                mode='bilinear',
+                                align_corners=False) * 255.
 
-    return project_map
+    return project_map.detach().numpy()
 
 
-def colorMapImage(imgs: np.ndarray, project_map: torch.Tensor):
+def colorMapImage(imgs: np.ndarray,
+                  project_map: np.ndarray,
+                  mode=cv2.COLORMAP_JET):
     '''以DDT算法得到的投影特征图为mask，遮罩到原图片上。
 
     Parameters
     ----------
     imgs : np.ndarray
         原图片，形状为NCHW
-    project_map : torch.Tensor
+    project_map : np.ndarray
         DDT算法得到的投影特征图，形状为NHW
     
     Returns
@@ -561,8 +462,8 @@ def colorMapImage(imgs: np.ndarray, project_map: torch.Tensor):
         # img = cv2.resize(cv2.imread(os.path.join('./data', name)), (224, 224)) #读取为BGR格式
         # 将project_map repeat为(3,H,W)再转置为(H,W,3)
         # 这里的mask类似于自己的IndicatorMat
-        mask = project_map[i].repeat(3, 1, 1).permute(1, 2, 0).detach().numpy()
-        mask = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
+        mask = np.tile(project_map[i], reps=(3, 1, 1)).transpose(1, 2, 0)
+        mask = cv2.applyColorMap(mask.astype(np.uint8), mode)
         # addWeighted接受的两个数组应当为同样形状：HWC，因此将imgs[i]转为HWC形状
         img = np.tile(imgs[i], (3, 1, 1)).transpose(1, 2, 0).astype('uint8')
         output_img = cv2.addWeighted(img, 0.5, mask, 0.5, 0.0)
@@ -570,12 +471,12 @@ def colorMapImage(imgs: np.ndarray, project_map: torch.Tensor):
     return output_imgs
 
 
-def maskToColorMap(project_maps: torch.Tensor):
+def toColorMap(project_maps: np.ndarray, mode=cv2.COLORMAP_JET):
     '''将图像按照数值映射为颜色色阶图
 
     Parameters
     ----------
-    project_map : torch.Tensor
+    project_map : np.ndarray
         需要被映射的数组，形状为NCHW
 
     Returns
@@ -587,8 +488,7 @@ def maskToColorMap(project_maps: torch.Tensor):
                              project_maps.shape[3], 3),
                             dtype=np.uint8)
     for i in range(project_maps.shape[0]):
-        mask = project_maps[i].repeat(3, 1, 1).permute(1, 2,
-                                                       0).detach().numpy()
-        mask = cv2.applyColorMap(mask.astype(np.uint8), cv2.COLORMAP_JET)
+        mask = np.tile(project_maps[i], reps=(3, 1, 1)).transpose(1, 2, 0)
+        mask = cv2.applyColorMap(mask.astype(np.uint8), mode)
         colored_maps[i] = mask
     return colored_maps
