@@ -430,8 +430,8 @@ def DDTThirdParty(imgs: np.ndarray, net: torch.nn.Module):
 
     project_map = F.interpolate(project_map.unsqueeze(1),
                                 size=(imgs.shape[2], imgs.shape[3]),
-                                mode='bilinear',
-                                align_corners=False) * 255.
+                                mode='nearest',
+                                ) * 255.
 
     return project_map.detach().numpy()
 

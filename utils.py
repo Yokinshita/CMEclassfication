@@ -69,9 +69,11 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
         需要保存的数组，形状为NHW
     path : str
         路径
+    preffix : str
+        图片文件名称的前缀
     """
     for i in range(array.shape[0]):
-        Image.fromarray(array[i].astype('int')).convert('L').save(
+        Image.fromarray(array[i].astype('uint8')).convert('L').save(
             os.path.join(path, preffix + '{}.png'.format(i)))
 
 
