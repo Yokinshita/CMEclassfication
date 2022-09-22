@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
+from typing import Union, List, Any, Dict
 
 
 class Net(nn.Module):
-
     def __init__(self, num_classes=2, drop_prob=0.5):
         super().__init__()
         # input_size 1*224*224
@@ -68,7 +68,6 @@ class Net(nn.Module):
 
 
 class LeNet5(nn.Module):
-
     def __init__(self, num_classes=2, drop_prob=0.5):
         super().__init__()
         self.drop_prob = drop_prob
@@ -82,12 +81,9 @@ class LeNet5(nn.Module):
             nn.Conv2d(20, 50, 5),  #N*50*106*106
             nn.ReLU(),
             nn.MaxPool2d(2, 2))  #N*50*53*53
-        self.fc = nn.Sequential(nn.Linear(50 * 53 * 53, 120),
-                                nn.ReLU(),
-                                nn.Dropout(drop_prob),
-                                nn.Linear(120, 84),
-                                nn.ReLU(),
-                                nn.Dropout(drop_prob),
+        self.fc = nn.Sequential(nn.Linear(50 * 53 * 53, 120), nn.ReLU(),
+                                nn.Dropout(drop_prob), nn.Linear(120, 84),
+                                nn.ReLU(), nn.Dropout(drop_prob),
                                 nn.Linear(84, num_classes))
 
     def forward(self, x):
@@ -110,3 +106,118 @@ class LeNet5(nn.Module):
             out = self.forward(x)
             out = torch.argmax(out, dim=1)
         return out
+
+
+class VGG(nn.Module):
+    def __init__(self,
+                 features,
+                 num_classes=2,
+                 drop_prob=0.5,
+                 init_weights=True):
+        # input 3*512*512
+        super(VGG, self).__init__()
+        self.drop_prob = drop_prob
+        self.features = features  # out 512*32*32
+        self.classifier = nn.Sequential(
+            nn.Linear(512 * 32 * 32, 4096),
+            nn.ReLU(True),
+            nn.Dropout(self.drop_prob),
+            nn.Linear(4096, 4096),
+            nn.ReLU(True),
+            nn.Dropout(self.drop_prob),
+            nn.Linear(4096, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+    def load_param(self, model_path):
+        map_location = torch.device(
+            'cuda') if torch.cuda.is_available() else torch.device('cpu')
+        self.load_state_dict(torch.load(model_path, map_location))
+
+    def predict(self, x):
+        self.eval()
+        with torch.no_grad():
+            if not isinstance(x, torch.Tensor):
+                x = torch.from_numpy(x)
+            out = self.forward(x)
+            out = torch.argmax(out, dim=1)
+        return out
+
+    def _initialize_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight,
+                                        mode='fan_out',
+                                        nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.constant_(m.bias, 0)
+
+
+def _make_layers(cfg: List[Union[str, int]],
+                 batch_norm: bool = False) -> nn.Sequential:
+    '''用以构造VGG网络中卷积层的函数
+
+    Parameters
+    ----------
+    cfg : List[Union[str, int]]
+        包含卷积层网络构成的List
+    batch_norm : bool, optional
+        决定是否启用batch_norm，若为True，则启用，若为False，则不启用
+
+    Returns
+    -------
+    nn.Sequential
+        VGG网络中的卷积层构成的Sequential，作为VGG的feature
+    '''
+    layers: List[nn.Module] = []
+    in_channels = 3
+    for v in cfg:
+        if v == 'M':
+            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
+        else:
+            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+            if batch_norm:
+                layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+            else:
+                layers += [conv2d, nn.ReLU(inplace=True)]
+            in_channels = v
+    return nn.Sequential(*layers)
+
+
+cfgs: Dict[str, List[Union[str, int]]] = {
+    'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'B':
+    [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'D': [
+        64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M',
+        512, 512, 512, 'M'
+    ],
+    'E': [
+        64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512,
+        512, 'M', 512, 512, 512, 512
+    ],
+}
+
+
+def _vgg(arch: str, cfg: str, batch_norm: bool, **kwargs: Any) -> VGG:
+    model = VGG(_make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)
+    return model
+
+
+def vgg19(**kwargs: Any) -> VGG:
+    return _vgg('vgg19', 'E', False, **kwargs)
+
+
+def vgg19_bn(**kwargs: Any) -> VGG:
+    return _vgg('vgg19', 'E', True, **kwargs)
