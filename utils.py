@@ -5,13 +5,15 @@ import os
 import torch
 from natsort import natsorted
 from typing import Union
+from torchvision.transforms import functional as F
 
 
 def loadSingleImg(path: str) -> np.ndarray:
     """
     载入单张图片，形状为NCHW
     """
-    img = Image.open(path).convert('L')
+    # TODO 神经网络载入的数据已经变成了[0,1]的tensor，因此在对图片进行验证时，载入的数据同样需要改为[0,1]
+    img = Image.open(path).convert('RGB')
     img = np.array(img, dtype=np.float32)
     img = np.expand_dims(img, 0)
     img = np.expand_dims(img, 0)
@@ -187,58 +189,52 @@ def grayImageToRGB(arr: np.ndarray) -> np.ndarray:
 class CenterCrop:
     """
     将CME图像中以circlePoint为圆心，半径为90的区域内像素置为需要的值
-    为提高效率，利用image*mask+value的方式对中心区域进行赋值
     """
-    def __init__(self, circlePoint=(243, 258), radius=90, value=127):
+    def __init__(self, fmat, circlePoint=(243, 258), radius=90, value=0):
         """
 
         Parameters
         ----------
+        fmt : str
+            输入图像的格式，CHW或者是NCHW。
+            若为"CHW"，则图像通道数可以为1或者为3，若为"NCHW"，图像通道数应为3
         circlePoint : tuple, optional
             圆心点, by default (243, 258)
         radius : int, optional
             半径, by default 90
-        value : int, optional
-            要赋的值, by default 127
+        value : float, optional
+            要赋的值, 应当在[0,1]之内, by default 0
         """
-        self.mask = np.ones((512, 512))
-        self.value = np.zeros((512, 512))
-        for i in range(512):
-            for j in range(512):
-                if ((i - circlePoint[0])**2 +
-                    (j - circlePoint[1])**2)**0.5 < radius:
-                    self.mask[i, j] = 0
-                    self.value[i, j] = value
+        self.value = value
+        self.fmat = fmat
+        if fmat == 'CHW':
+            self.mask = np.full((512, 512), False, dtype=bool)
+            for i in range(512):
+                for j in range(512):
+                    if ((i - circlePoint[0])**2 +
+                        (j - circlePoint[1])**2)**0.5 < radius:
+                        self.mask[i, j] = True
+        elif fmat == 'NCHW':
+            self.mask = np.full((3, 512, 512), False, dtype=bool)
+            for i in range(512):
+                for j in range(512):
+                    if ((i - circlePoint[0])**2 +
+                        (j - circlePoint[1])**2)**0.5 < radius:
+                        self.mask[:, i, j] = True
+        else:
+            raise ValueError('Input parameter format only accept CHW or NCHW')
 
     def __call__(self, image: Union[np.ndarray, torch.Tensor]):
         if isinstance(image, np.ndarray):
             image = np.copy(image)
-            if image.ndim == 3:
-                image[0] = np.multiply(image[0], self.mask) + self.value
-                return image
-            elif image.ndim == 4:
-                for i in range(image.shape[0]):
-                    image[i][0] = np.multiply(image[i][0],
-                                              self.mask) + self.value
-                return image
-            else:
-                raise ValueError(
-                    'Input array dimensions expected to be 3 or 4, got {}'.
-                    format(image.ndim))
+            for i in range(image.shape[0]):
+                image[i][self.mask] = self.value
+            return image
         if isinstance(image, torch.Tensor):
-            mask = torch.from_numpy(self.mask)
-            mask = torch.clone(mask)
-            if image.ndim == 3:
-                image[0] = torch.mul(image[0], mask) + self.value
-                return image
-            elif image.ndim == 4:
-                for i in range(image.shape[0]):
-                    image[i][0] = torch.mul(image[i][0], mask) + self.value
-                return image
-            else:
-                raise ValueError(
-                    'Input array dimensions expected to be 3 or 4, got {}'.
-                    format(image.ndim))
+            tensormask = torch.from_numpy(self.mask)
+            for i in range(image.shape[0]):
+                image[i][tensormask] = self.value
+            return image
 
 
 def showArrayRange(arr: np.ndarray) -> tuple:

@@ -7,7 +7,7 @@ from torchvision.transforms import functional as F
 
 
 def read_imgarray_from_singlepic(path_to_pic: str, transform) -> torch.Tensor:
-    '''读取图片，并返回torch.tensor数组
+    '''读取图片，并返回torch.tensor数组，形状为NCHW
     返回的tensor数组范围已经转换为[0,1]，
     Parameters
     ----------
@@ -19,11 +19,12 @@ def read_imgarray_from_singlepic(path_to_pic: str, transform) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        图片数组，形状为CHW，类型为torch.float32
+        图片数组，形状为NCHW，类型为torch.float32
     '''
     # png图片是P模式，要转换为RGB模式
     img = Image.open(path_to_pic).convert('RGB')
     img = F.to_tensor(img)
+    img = img.unsqueeze(dim=0)
     if transform:
         img = transform(img)
     return img
@@ -90,57 +91,59 @@ def load_no_CME(save_location, transform):
     No_CME_path = os.path.join(save_location, 'No CME')
     print('Reading No CME data from {}'.format(No_CME_path))
     imgarray = read_imgarray_from_folder(No_CME_path, transform)
-    labels = torch.ones(imgarray.shape[0], dtype=torch.int64)
+    labels = torch.zeros(imgarray.shape[0], dtype=torch.int64)
     return imgarray, labels
 
 
 class CenterCrop:
     """
     将CME图像中以circlePoint为圆心，半径为90的区域内像素置为需要的值
-    为提高效率，利用image*mask+value的方式对中心区域进行赋值
     """
-    def __init__(self, circlePoint=(243, 258), radius=90, value=127):
+    def __init__(self, fmat, circlePoint=(243, 258), radius=90, value=0):
         """
 
         Parameters
         ----------
+        fmt : str
+            输入图像的格式，CHW或者是NCHW。
+            若为"CHW"，则图像通道数可以为1或者为3，若为"NCHW"，图像通道数应为3
         circlePoint : tuple, optional
             圆心点, by default (243, 258)
         radius : int, optional
             半径, by default 90
-        value : int, optional
-            要赋的值, by default 127
+        value : float, optional
+            要赋的值, 应当在[0,1]之内, by default 0
         """
-        self.mask = np.ones((512, 512))
-        self.value = np.zeros((512, 512))
-        for i in range(512):
-            for j in range(512):
-                if ((i - circlePoint[0])**2 +
-                    (j - circlePoint[1])**2)**0.5 < radius:
-                    self.mask[i, j] = 0
-                    self.value[i, j] = value
+        self.value = value
+        self.fmat = fmat
+        if fmat == 'CHW':
+            self.mask = np.full((512, 512), False, dtype=bool)
+            for i in range(512):
+                for j in range(512):
+                    if ((i - circlePoint[0])**2 +
+                        (j - circlePoint[1])**2)**0.5 < radius:
+                        self.mask[i, j] = True
+        elif fmat == 'NCHW':
+            self.mask = np.full((3, 512, 512), False, dtype=bool)
+            for i in range(512):
+                for j in range(512):
+                    if ((i - circlePoint[0])**2 +
+                        (j - circlePoint[1])**2)**0.5 < radius:
+                        self.mask[:, i, j] = True
+        else:
+            raise ValueError('Input parameter format only accept CHW or NCHW')
 
     def __call__(self, image: Union[np.ndarray, torch.Tensor]):
         if isinstance(image, np.ndarray):
             image = np.copy(image)
-            if image.ndim == 3:
-                image[0] = np.multiply(image[0], self.mask) + self.value
-                return image
-            elif image.ndim == 4:
-                for i in range(image.shape[0]):
-                    image[i][0] = np.multiply(image[i][0],
-                                              self.mask) + self.value
-                return image
+            for i in range(image.shape[0]):
+                image[i][self.mask] = self.value
+            return image
         if isinstance(image, torch.Tensor):
-            mask = torch.from_numpy(self.mask)
-            mask = torch.clone(mask)
-            if image.ndim == 3:
-                image[0] = torch.mul(image[0], mask) + self.value
-                return image
-            elif image.ndim == 4:
-                for i in range(image.shape[0]):
-                    image[i][0] = torch.mul(image[i][0], mask) + self.value
-                return image
+            tensormask = torch.from_numpy(self.mask)
+            for i in range(image.shape[0]):
+                image[i][tensormask] = self.value
+            return image
 
 
 class CMEdata:
@@ -166,6 +169,9 @@ class CMEdata:
         self.train_label = None
         self.test_data = None
         self.test_label = None
+        self.size = None
+        self.train_size = None
+        self.test_size = None
 
     def __random_split(self, data: np.ndarray, labels: np.ndarray,
                        train_percentage: float):
@@ -227,6 +233,9 @@ class CMEdata:
         self.train_label = data['train_label']
         self.test_data = data['test_data']
         self.test_label = data['test_label']
+        self.size = self.train_data.shape[0] + self.test_data.shape[0]
+        self.train_size = self.train_data.shape[0]
+        self.test_size = self.size - self.train_size
 
     def load_data(self, forcing_load_from_pic, save_npz=False):
         npz_file_path = os.path.join(self.save_location, 'npz', 'data.npz')
@@ -262,13 +271,13 @@ class CMEdata:
 
 if __name__ == '__main__':
     # 该文件被设置为可以独立运行
-    save_location = r'D:\Programming\CME_data'
-    selected_remarks = ['Halo', 'No Remark', 'Partial Halo']
+    save_location = r'/home/lin/testdataset'
+    selected_remarks = ['Only C2', 'Partial Halo', 'Poor Event']
     train_percentage = 0.7
     batch_size = 100
-    cmedata = CMEdata(save_location, selected_remarks, train_percentage)
-    cmedata.load_data_from_pic(train_percentage)
-    cmedata.save_data_to_npz()
+    trans = CenterCrop('NCHW')
+    cmedata = CMEdata(save_location, selected_remarks, train_percentage, trans)
+    cmedata.load_data(True)
     train_dataset = cmedata.to_tensordataset()
     train_iter = torch.utils.data.DataLoader(train_dataset,
                                              batch_size,
