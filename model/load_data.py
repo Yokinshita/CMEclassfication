@@ -1,27 +1,29 @@
 import torch
-import torchvision
 from PIL import Image
 import numpy as np
 import os
 from typing import Union
+from torchvision.transforms import functional as F
 
 
-def read_imgarray_from_singlepic(path_to_pic: str, transform):
-    """
-    读取图片，并返回numpy ndarray数组
-    Arguments:
-    ---------
-    path_to_pic : 图片的路径
+def read_imgarray_from_singlepic(path_to_pic: str, transform) -> torch.Tensor:
+    '''读取图片，并返回torch.tensor数组
+    返回的tensor数组范围已经转换为[0,1]，
+    Parameters
+    ----------
+    path_to_pic : str
+        图片的路径
+    transform :
+        对图片施加的变换
 
-    Returns:
+    Returns
     -------
-    img         : 图片数组，形状为1*高*宽
-    """
-
-    # png图片是P模式，要转换为L模式（灰度）
-    img = Image.open(path_to_pic).convert('L')
-    img = np.array(img, dtype=np.float32)
-    img = np.expand_dims(img, 0)  # 增加一个维度，变成通道*高*宽的形式
+    torch.Tensor
+        图片数组，形状为CHW，类型为torch.float32
+    '''
+    # png图片是P模式，要转换为RGB模式
+    img = Image.open(path_to_pic).convert('RGB')
+    img = F.to_tensor(img)
     if transform:
         img = transform(img)
     return img
@@ -29,13 +31,13 @@ def read_imgarray_from_singlepic(path_to_pic: str, transform):
 
 def read_imgarray_from_folder(path_to_folder: str, transform):
     """
-    从单个文件夹中读取所有的图片，并转换为numpy.array形式返回
+    从单个文件夹中读取所有的图片，并转换为torch.tensor形式返回
     Arguments:
     ---------
     path_to_folder   : 数据所属的根文件夹路径
     Returns:
     -------
-    imgarray         : 某个文件夹下所有图片组成的数组，形状为数量*通道*高*宽
+    imgarray         : 某个文件夹下所有图片组成的数组，形状为数量*通道*高*宽，形状为torch.float32
     """
 
     pics = os.listdir(path_to_folder)
@@ -44,8 +46,8 @@ def read_imgarray_from_folder(path_to_folder: str, transform):
         img = read_imgarray_from_singlepic(os.path.join(path_to_folder, file),
                                            transform)
         imglist.append(img)
-    imgarray = np.array(imglist)
-    return imgarray
+    imgtensor = torch.cat(imglist)
+    return imgtensor
 
 
 def load_CME(save_location, selected_remarks, transform):
@@ -57,19 +59,19 @@ def load_CME(save_location, selected_remarks, transform):
     selected_labels  : 需要的数据所属的标签
     Returns:
     -------                                   
-    imgarrays         : 所有图片组成的数组，形状为数量*通道*高*宽
-    labels            : 数据的标签，1表示CME，0表示非CME
+    imgarrays         : 所有图片组成的数组，形状为数量*通道*高*宽，类型为torch.float32
+    labels            : 数据的标签，1表示CME，0表示非CME，类型为torch.int64
     """
     CME_path = os.path.join(save_location, 'CME')
-    imgarray = read_imgarray_from_folder(
-        os.path.join(CME_path, selected_remarks.pop(0)), transform)
+    imglist = []
     for remark in selected_remarks:
         current_label_imgarray = read_imgarray_from_folder(
             os.path.join(CME_path, remark), transform)
         print('Reading CME data from {}'.format(os.path.join(CME_path,
                                                              remark)))
-        imgarray = np.concatenate((imgarray, current_label_imgarray), axis=0)
-    labels = np.ones(imgarray.shape[0], dtype=np.int64)
+        imglist.append(current_label_imgarray)
+    imgarray = torch.cat(imglist)
+    labels = torch.ones(imgarray.shape[0], dtype=torch.int64)
     return imgarray, labels
 
 
@@ -81,14 +83,14 @@ def load_no_CME(save_location, transform):
     path_to_folder   : 数据所属的根文件夹路径
     Returns:
     -------
-    imgarrays         : 所有图片组成的数组，形状为数量*高*宽*通道
+    imgarrays         : 所有图片组成的数组，形状为数量*高*宽*通道，类型为torch.float32
     labels            : 数据的标签，1表示CME，0表示非CME
     """
 
     No_CME_path = os.path.join(save_location, 'No CME')
     print('Reading No CME data from {}'.format(No_CME_path))
     imgarray = read_imgarray_from_folder(No_CME_path, transform)
-    labels = np.zeros(imgarray.shape[0], dtype=np.int64)
+    labels = torch.ones(imgarray.shape[0], dtype=torch.int64)
     return imgarray, labels
 
 
@@ -97,7 +99,6 @@ class CenterCrop:
     将CME图像中以circlePoint为圆心，半径为90的区域内像素置为需要的值
     为提高效率，利用image*mask+value的方式对中心区域进行赋值
     """
-
     def __init__(self, circlePoint=(243, 258), radius=90, value=127):
         """
 
@@ -145,7 +146,7 @@ class CenterCrop:
 class CMEdata:
     # 该类用以载入数据集，同时会将CME和非CME数据混合后打乱，并可以以TensorDataset形式输出
     def __init__(self, save_location: str, selected_remarks: list,
-                 train_percentage):
+                 train_percentage: float, transform):
         """
 
         Arguments:
@@ -153,22 +154,27 @@ class CMEdata:
         save_location       : 数据的根目录
         selected_remarks    : 需要用做数据集的图片所属的标签
         train_percentage    : 训练集的占比
+        trans               : 对图片所作的变换
 
         """
 
         self.save_location = save_location
         self.selected_remarks = selected_remarks
         self.train_percentage = train_percentage
-        self.trans = CenterCrop()
+        self.transfrom = transform
+        self.train_data = None
+        self.train_label = None
+        self.test_data = None
+        self.test_label = None
 
     def __random_split(self, data: np.ndarray, labels: np.ndarray,
                        train_percentage: float):
         size = data.shape[0]  # 数据集中数据的个数
-        index = np.arange(size)  # 产生索引
-        np.random.shuffle(index)  # 打乱索引，以便将数据都混合在一起
+        shuffled_index = torch.randperm(size).tolist()
         split = int(train_percentage * size)  # 获得训练集和测试集的分划点
         # 0到split为训练集 split到最后为测试集
-        train_index, test_index = index[:split], index[split:]
+        train_index, test_index = shuffled_index[:split], shuffled_index[
+            split:]
         train_data = data[train_index, :, :, :]
         train_label = labels[train_index]
         test_data = data[test_index, :, :, :]
@@ -187,7 +193,7 @@ class CMEdata:
                  test_data=self.test_data,
                  test_label=self.test_label)
 
-    def load_data_from_pic(self, train_percentage):
+    def load_data_from_pic(self, train_percentage, save_npz, transform):
         """
         加载图片数据，打乱，分割并作为数据集和测试集
         ！！！！使用该方法，每次得到的训练集和测试集不完全相同
@@ -197,20 +203,19 @@ class CMEdata:
         """
         print('Loading data from {}'.format(self.save_location))
         CMEdata, CME_labels = load_CME(self.save_location,
-                                       self.selected_remarks,
-                                       transform=self.trans)
-        no_CME_data, no_CME_labels = load_no_CME(self.save_location,
-                                                 transform=self.trans)
-        data = np.concatenate((CMEdata, no_CME_data), axis=0)
-        labels = np.concatenate((CME_labels, no_CME_labels), axis=0)
+                                       self.selected_remarks, transform)
+        no_CME_data, no_CME_labels = load_no_CME(self.save_location, transform)
+        data = torch.cat((CMEdata, no_CME_data), axis=0)
+        labels = torch.cat((CME_labels, no_CME_labels), axis=0)
         self.size = data.shape[0]
         self.train_size = int(self.size * train_percentage)
         self.test_size = self.size - self.train_size
         self.train_data, self.train_label, self.test_data, self.test_label = self.__random_split(
             data, labels, train_percentage)
-        npz_file_path = os.path.join(self.save_location, 'npz', 'data.npz')
-        if not os.path.exists(npz_file_path):
-            self.save_data_to_npz()
+        if save_npz:
+            npz_file_path = os.path.join(self.save_location, 'npz', 'data.npz')
+            if not os.path.exists(npz_file_path):
+                self.save_data_to_npz()
 
     def load_data_from_npz(self):
         # 从已经储存的npz文件中加载数据
@@ -222,11 +227,8 @@ class CMEdata:
         self.train_label = data['train_label']
         self.test_data = data['test_data']
         self.test_label = data['test_label']
-        self.size = self.train_data.shape[0] + self.test_data.shape[0]
-        self.train_size = self.train_data.shape[0]
-        self.test_size = self.size - self.train_size
 
-    def load_data(self, forcing_load_from_pic=False):
+    def load_data(self, forcing_load_from_pic, save_npz=False):
         npz_file_path = os.path.join(self.save_location, 'npz', 'data.npz')
         # 存在npz文件并且不强制从图片载入，则从npz文件载入
         if os.path.exists(npz_file_path) and forcing_load_from_pic is False:
@@ -234,7 +236,8 @@ class CMEdata:
                 npz_file_path))
             self.load_data_from_npz()
         else:
-            self.load_data_from_pic(self.train_percentage)
+            self.load_data_from_pic(self.train_percentage, save_npz,
+                                    self.transfrom)
 
     def to_tensordataset(self, is_train=True):
         """
@@ -253,9 +256,6 @@ class CMEdata:
         else:
             feature = self.test_data
             label = self.test_label
-        # 转换为tensor
-        feature = torch.from_numpy(feature)
-        label = torch.from_numpy(label)
 
         return torch.utils.data.TensorDataset(feature, label)
 
