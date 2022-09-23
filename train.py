@@ -21,7 +21,7 @@ if __name__ == '__main__':
     args.train_percentage = 0.7
 
     paras = vars(args)
-
-    modeltrain=train_schedule.ModelTrain(paras,model_defination.LeNet5)
+    net = model_defination.vgg19(drop_prob=paras.drop_prob)
+    modeltrain = train_schedule.ModelTrain(paras, net)
     modeltrain.fit()
     modeltrain.save_info()

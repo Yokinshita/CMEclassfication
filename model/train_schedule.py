@@ -1,12 +1,3 @@
-import torch
-import torch.nn as nn
-import numpy as np
-from torch.optim import optimizer
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
-import os
-import sys
-sys.path.append(os.path.join(os.getcwd(), 'model'))
 import time
 import model_defination
 import load_data
@@ -14,11 +5,23 @@ import configuration
 import json
 import pandas as pd
 from PIL import Image
+import torch
+import torch.nn as nn
+import numpy as np
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+import os
+import sys
+
+sys.path.append(os.path.join(os.getcwd(), 'model'))
 
 
 class ModelTrain:
-
-    def __init__(self, para_dict, Net, forcing_load_from_pic=False) -> None:
+    def __init__(self,
+                 para_dict,
+                 net,
+                 transform,
+                 forcing_load_from_pic=True) -> None:
         self.save_location = para_dict['save_location']
         self.lr = para_dict['learning_rate']
         self.num_epochs = para_dict['num_epochs']
@@ -29,7 +32,7 @@ class ModelTrain:
         self.step_size = para_dict['step_size']
         self.gamma = para_dict['gamma']
         self.aloud = para_dict['aloud']
-        self.net = Net(drop_prob=self.drop_prob)
+        self.net = net
         self.loss = nn.CrossEntropyLoss()
         self.optimizer = torch.optim.SGD(self.net.parameters(), lr=self.lr)
         self.scheduler = torch.optim.lr_scheduler.StepLR(
@@ -42,7 +45,7 @@ class ModelTrain:
             'cuda' if torch.cuda.is_available() else 'cpu')
         self.cmedata = load_data.CMEdata(self.save_location,
                                          self.selected_remarks,
-                                         self.train_percentage)
+                                         self.train_percentage, transform)
         self.forcing_load_from_pic = forcing_load_from_pic
 
     def __create_folder(self, path_to_folder):
@@ -67,7 +70,6 @@ class ModelTrain:
         df.to_excel(filename)
 
     class _ModuleEncoder(json.JSONEncoder):
-
         def default(self, obj):
             if isinstance(obj, torch.nn.Module):
                 return repr(obj.__class__)
@@ -172,7 +174,8 @@ class ModelTrain:
         print('----------------------')
         print('Begin training:')
         print('total {} epoches, {} iterations each epoch'.format(
-            self.num_epochs, int(self.cmedata.train_size / self.batch_size) + 1))
+            self.num_epochs,
+            int(self.cmedata.train_size / self.batch_size) + 1))
         # 如果在终端输出更多信息，则tqdm的total应为总的iteration数，在每个batch结束后更新pbar
         # 如果不需要输出更多信息，则tqdm的total应为总的epoch数，在每个epoch结束后更新pbar
         if self.aloud:
@@ -224,11 +227,8 @@ class ModelTrain:
                     'epoch_time': time.time() - current_epoch_start,
                     'total_time': time.time() - train_start
                 }
-                self.__log(epoch_train_loss,
-                           epoch_train_accu,
-                           test_loss,
-                           test_accu,
-                           self.optimizer.param_groups[0]['lr'],
+                self.__log(epoch_train_loss, epoch_train_accu, test_loss,
+                           test_accu, self.optimizer.param_groups[0]['lr'],
                            epoch)
                 self.train_details_list.append(epoch_detail_dict)
                 epoch_detail_dict.pop('epoch_num')
@@ -264,8 +264,12 @@ class ModelTrain:
 
 
 if __name__ == '__main__':
-    modeltrain = ModelTrain(para_dict=configuration.para_dict,
-                            Net=model_defination.LeNet5)
+    trans = load_data.CenterCrop('NCHW')
+    net = model_defination.vgg19(
+        drop_prob=configuration.para_dict['drop_prob'])
+    modeltrain = ModelTrain(configuration.para_dict,
+                            net,
+                            trans)
     modeltrain.fit()
     modeltrain.save_info()
     resu = modeltrain.infer(
