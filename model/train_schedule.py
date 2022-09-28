@@ -97,12 +97,15 @@ class ModelTrain:
         with open(filename, 'w') as f:
             json.dump(para, f, cls=ModelTrain._ModuleEncoder)
 
+    def __save_model_info(self, model_info_path):
+        filename = os.path.join(self.log_path, 'parameters.pkl')
+        torch.save(self.net.state_dict(), filename)
+
     def save_info(self):
         self.__create_folder(self.log_path)
         self.__save_epoch_info(self.log_path)
         self.__save_para_info(self.log_path)
-        torch.save(self.net.state_dict(),
-                   os.path.join(self.log_path, 'parameters.pkl'))
+        self.__save_model_info(self.log_path)
         print('Save training detailed infomation to {}'.format(self.log_path))
 
     def evaluate_accuracy_on(self, X, y):
@@ -162,7 +165,25 @@ class ModelTrain:
         self.writer.add_scalar('accu/test', test_accu, global_step)
         self.writer.add_scalar('lr', lr, global_step)
 
-    def fit(self):
+    def early_stop(self, patience, metric, mode):
+        decide_stop = False
+        scores = torch.tensor(
+            [epoch_detail[metric] for epoch_detail in self.train_details_list])
+        best_score_idx = scores.argmax() if mode == 'max' else scores.argmin()
+        if best_score_idx == len(scores) - 1:
+            self.__save_model_info(self.log_path)
+            print("<<<<<< reach best {0} : {1} >>>>>>".format(
+                metric, scores[best_score_idx]),
+                  file=sys.stderr)
+        if len(scores) - best_score_idx > patience:
+            print(
+                "<<<<<< {} without improvement in {} epoches, early stopping >>>>>>"
+                .format(metric, patience),
+                file=sys.stderr)
+            decide_stop = True
+        return decide_stop
+
+    def fit(self, patience=5, metric='epoch_test_accu', mode='max'):
         train_iter, test_iter = self.__get_dataloader()
         self.net = self.net.to(self.device)
         self.net.train()
@@ -218,27 +239,34 @@ class ModelTrain:
                     pbar.set_description('epoch {} iteration {}'.format(
                         epoch + 1, iteration_count))
                     pbar.update(1)
+                epoch_time = time.time() - current_epoch_start
+                total_time = time.time() - train_start
                 epoch_detail_dict = {
                     'epoch_num': epoch,
                     'epoch_train_loss': epoch_train_loss,
                     'epoch_train_accu': epoch_train_accu,
                     'epoch_test_loss': test_loss,
                     'epoch_test_accu': test_accu,
-                    'epoch_time': time.time() - current_epoch_start,
-                    'total_time': time.time() - train_start
+                    'epoch_time': epoch_time,
+                    'total_time': total_time
                 }
                 self.__log(epoch_train_loss, epoch_train_accu, test_loss,
                            test_accu, self.optimizer.param_groups[0]['lr'],
                            epoch)
                 self.train_details_list.append(epoch_detail_dict)
-                epoch_detail_dict.pop('epoch_num')
-                pbar.set_postfix(epoch_detail_dict)
+                pbar.set_postfix(train_loss=epoch_train_loss,
+                                 train_accu=epoch_train_accu,
+                                 test_loss=test_loss,
+                                 test_accu=test_accu)
                 self.scheduler.step()
+                if self.early_stop(patience, metric, mode):
+                    break
         except KeyboardInterrupt:
             print('Training manually interrupted')
         finally:
             pbar.close()
             print('Finish training')
+            self.save_info()
             self.writer.close()
 
     def infer(self, path: str):
