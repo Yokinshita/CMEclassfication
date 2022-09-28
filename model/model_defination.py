@@ -215,6 +215,22 @@ def _vgg(arch: str, cfg: str, batch_norm: bool, **kwargs: Any) -> VGG:
     return model
 
 
+def vgg11(**kwargs: Any) -> VGG:
+    return _vgg('vgg11', 'A', False, **kwargs)
+
+
+def vgg11_bn(**kwargs: Any) -> VGG:
+    return _vgg('vgg11_bn', 'A', True, **kwargs)
+
+
+def vgg13(**kwargs: Any) -> VGG:
+    return _vgg('vgg13', 'B', False, **kwargs)
+
+
+def vgg13_bn(**kwargs: Any) -> VGG:
+    return _vgg('vgg13_bn', 'B', True, **kwargs)
+
+
 def vgg19(**kwargs: Any) -> VGG:
     return _vgg('vgg19', 'E', False, **kwargs)
 
