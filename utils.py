@@ -8,20 +8,25 @@ from typing import Union
 from torchvision.transforms import functional as F
 
 
-def loadSingleImg(path: str) -> np.ndarray:
+def loadSingleImg(path: str, transform: callable) -> np.ndarray:
     """
     载入单张图片，形状为NCHW
     """
-    # TODO 神经网络载入的数据已经变成了[0,1]的tensor，因此在对图片进行验证时，载入的数据同样需要改为[0,1]
-    img = Image.open(path).convert('RGB')
+    img = Image.open(path).convert('L')
     img = np.array(img, dtype=np.float32)
     img = np.expand_dims(img, 0)
     img = np.expand_dims(img, 0)
+    if transform:
+        img = transform(img)
     # img = torch.from_numpy(img)
     return img
 
 
-def loadImageFolder(path_to_folder: str, ordering: bool = True) -> np.ndarray:
+def loadImageFolder(
+    path_to_folder: str,
+    transform: callable = None,
+    ordering: bool = True,
+) -> np.ndarray:
     """
     载入给定文件夹中的所有图片，形状为NCHW
 
@@ -31,9 +36,9 @@ def loadImageFolder(path_to_folder: str, ordering: bool = True) -> np.ndarray:
     # 首先载入第一张图片
     if ordering is True:
         pics = natsorted(pics)  #对文件按照名称排序
-    imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]))
+    imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]), transform)
     for i in range(1, len(pics)):
-        img = loadSingleImg(os.path.join(path_to_folder, pics[i]))
+        img = loadSingleImg(os.path.join(path_to_folder, pics[i]), transform)
         imgs = np.concatenate((imgs, img), axis=0)
     return imgs
 
@@ -215,7 +220,7 @@ class CenterCrop:
                         (j - circlePoint[1])**2)**0.5 < radius:
                         self.mask[i, j] = True
         elif fmat == 'NCHW':
-            self.mask = np.full((3, 512, 512), False, dtype=bool)
+            self.mask = np.full((1, 512, 512), False, dtype=bool)
             for i in range(512):
                 for j in range(512):
                     if ((i - circlePoint[0])**2 +
