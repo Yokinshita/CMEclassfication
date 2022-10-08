@@ -241,6 +241,11 @@ class CenterCrop:
                 image[i][tensormask] = self.value
             return image
 
+    def __repr__(self):
+        str = self.__class__.__name__ + '(fmat:{}, set center value to {})'.format(
+            self.fmat, self.value)
+        return str
+
 
 def showArrayRange(arr: np.ndarray) -> tuple:
     '''打印arr的最大值和最小值

@@ -1,7 +1,7 @@
 import time
-import model_defination
-import load_data
-import configuration
+from . import model_defination
+from . import load_data
+from . import configuration
 import json
 import pandas as pd
 from PIL import Image
@@ -43,6 +43,7 @@ class ModelTrain:
         self.writer = SummaryWriter(self.log_path)
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
+        self.transform_repr = repr(transform)
         self.cmedata = load_data.CMEdata(self.save_location,
                                          self.selected_remarks,
                                          self.train_percentage, transform)
@@ -93,6 +94,7 @@ class ModelTrain:
         para['CME:NO CME'] = '{}:1'.format(pos / neg)
         para['Net'] = self.net
         para['lr_scheduler'] = self.scheduler
+        para['transform'] = self.transform_repr
         filename = os.path.join(train_info_path, 'para.json')
         with open(filename, 'w') as f:
             json.dump(para, f, cls=ModelTrain._ModuleEncoder)
