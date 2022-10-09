@@ -32,9 +32,14 @@ class ModelTrain:
         self.step_size = para_dict['step_size']
         self.gamma = para_dict['gamma']
         self.aloud = para_dict['aloud']
+        self.momentum = para_dict['momentum']
+        self.weight_decay = para_dict['weight_decay']
         self.net = net
         self.loss = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.SGD(self.net.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.SGD(self.net.parameters(),
+                                         lr=self.lr,
+                                         momentum=self.momentum,
+                                         weight_decay=self.weight_decay)
         self.scheduler = torch.optim.lr_scheduler.StepLR(
             self.optimizer, self.step_size, self.gamma)
         self.current_time = time.strftime("%Y_%m_%d_%H_%M_%S",

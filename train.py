@@ -19,6 +19,8 @@ if __name__ == '__main__':
     # 其他参数
     args.selected_remarks = ['Halo', 'No Remark', 'Partial Halo']
     args.train_percentage = 0.7
+    args.weight_decay = 2e-05
+    args.momentum = 0.9
 
     paras = vars(args)
     net = model_defination.vgg19(drop_prob=paras.drop_prob)
