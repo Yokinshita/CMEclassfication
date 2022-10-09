@@ -181,7 +181,7 @@ def _make_layers(cfg: List[Union[str, int]],
         VGG网络中的卷积层构成的Sequential，作为VGG的feature
     '''
     layers: List[nn.Module] = []
-    in_channels = 3
+    in_channels = 1
     for v in cfg:
         if v == 'M':
             layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
@@ -196,7 +196,7 @@ def _make_layers(cfg: List[Union[str, int]],
 
 
 cfgs: Dict[str, List[Union[str, int]]] = {
-    'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+    'A': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512],
     'B':
     [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'D': [

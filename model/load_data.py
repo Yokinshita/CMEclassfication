@@ -21,8 +21,8 @@ def read_imgarray_from_singlepic(path_to_pic: str, transform) -> torch.Tensor:
     torch.Tensor
         图片数组，形状为NCHW，类型为torch.float32
     '''
-    # png图片是P模式，要转换为RGB模式
-    img = Image.open(path_to_pic).convert('RGB')
+    # png图片是P模式，要转换为L模式
+    img = Image.open(path_to_pic).convert('L')
     img = F.to_tensor(img)
     img = img.unsqueeze(dim=0)
     if transform:
@@ -93,57 +93,6 @@ def load_no_CME(save_location, transform):
     imgarray = read_imgarray_from_folder(No_CME_path, transform)
     labels = torch.zeros(imgarray.shape[0], dtype=torch.int64)
     return imgarray, labels
-
-
-class CenterCrop:
-    """
-    将CME图像中以circlePoint为圆心，半径为90的区域内像素置为需要的值
-    """
-    def __init__(self, fmat, circlePoint=(243, 258), radius=90, value=0):
-        """
-
-        Parameters
-        ----------
-        fmt : str
-            输入图像的格式，CHW或者是NCHW。
-            若为"CHW"，则图像通道数可以为1或者为3，若为"NCHW"，图像通道数应为3
-        circlePoint : tuple, optional
-            圆心点, by default (243, 258)
-        radius : int, optional
-            半径, by default 90
-        value : float, optional
-            要赋的值, 应当在[0,1]之内, by default 0
-        """
-        self.value = value
-        self.fmat = fmat
-        if fmat == 'CHW':
-            self.mask = np.full((512, 512), False, dtype=bool)
-            for i in range(512):
-                for j in range(512):
-                    if ((i - circlePoint[0])**2 +
-                        (j - circlePoint[1])**2)**0.5 < radius:
-                        self.mask[i, j] = True
-        elif fmat == 'NCHW':
-            self.mask = np.full((3, 512, 512), False, dtype=bool)
-            for i in range(512):
-                for j in range(512):
-                    if ((i - circlePoint[0])**2 +
-                        (j - circlePoint[1])**2)**0.5 < radius:
-                        self.mask[:, i, j] = True
-        else:
-            raise ValueError('Input parameter format only accept CHW or NCHW')
-
-    def __call__(self, image: Union[np.ndarray, torch.Tensor]):
-        if isinstance(image, np.ndarray):
-            image = np.copy(image)
-            for i in range(image.shape[0]):
-                image[i][self.mask] = self.value
-            return image
-        if isinstance(image, torch.Tensor):
-            tensormask = torch.from_numpy(self.mask)
-            for i in range(image.shape[0]):
-                image[i][tensormask] = self.value
-            return image
 
 
 class CMEdata:
