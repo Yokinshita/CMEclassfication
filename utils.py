@@ -146,7 +146,7 @@ def arrayToImg(arr: np.ndarray) -> np.ndarray:
     np.ndarray
         修改后的数组
     '''
-    return normoalizeArray(arr.astype('np.uint8'), 0, 255)
+    return normoalizeArray(arr.astype(np.uint8), 0, 255)
 
 
 def showImg(arr: np.ndarray):
@@ -232,7 +232,6 @@ class CenterCrop:
 
     def __call__(self, image: Union[np.ndarray, torch.Tensor]):
         if isinstance(image, np.ndarray):
-            image = np.copy(image)
             for i in range(image.shape[0]):
                 image[i][self.mask] = self.value
             return image
