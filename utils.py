@@ -6,6 +6,7 @@ import torch
 from natsort import natsorted
 from typing import Union
 from torchvision.transforms import functional as F
+import gc
 
 
 def loadSingleImg(path: str, transform: callable) -> np.ndarray:
@@ -320,3 +321,95 @@ def NHWCtoNCHW(array: Union[np.ndarray, torch.Tensor]):
     else:
         raise TypeError(
             'Input array type should be np.ndarray or torch.Tensor')
+
+
+class MemCache:
+    '''PyTorch显存管理类
+    详情可参见https://www.zhihu.com/question/274635237/answer/2433849613
+    '''
+    @staticmethod
+    def byte2MB(bt):
+        return round(bt / (1024**2), 3)
+
+    def __init__(self):
+        self.dctn = {}
+        self.max_reserved = 0
+        self.max_allocate = 0
+
+    def mclean(self):
+        r0 = torch.cuda.memory_reserved(0)
+        a0 = torch.cuda.memory_allocated(0)
+        f0 = r0 - a0
+
+        for key in list(self.dctn.keys()):
+            del self.dctn[key]
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        r1 = torch.cuda.memory_reserved(0)
+        a1 = torch.cuda.memory_allocated(0)
+        f1 = r1 - a1
+
+        print('Mem Free')
+        print(f'Reserved  \t {MemCache.byte2MB(r1 - r0)}MB')
+        print(f'Allocated \t {MemCache.byte2MB(a1 - a0)}MB')
+        print(f'Free      \t {MemCache.byte2MB(f1 - f0)}MB')
+
+    def __setitem__(self, key, value):
+        self.dctn[key] = value
+        self.max_reserved = max(self.max_reserved,
+                                torch.cuda.memory_reserved(0))
+        self.max_allocate = max(self.max_allocate,
+                                torch.cuda.memory_allocated(0))
+
+    def __getitem__(self, item):
+        return self.dctn[item]
+
+    def __delitem__(self, *keys):
+        r0 = torch.cuda.memory_reserved(0)
+        a0 = torch.cuda.memory_allocated(0)
+        f0 = r0 - a0
+
+        for key in keys:
+            del self.dctn[key]
+
+        r1 = torch.cuda.memory_reserved(0)
+        a1 = torch.cuda.memory_allocated(0)
+        f1 = r1 - a1
+
+        print('Cuda Free')
+        print(f'Reserved  \t {MemCache.byte2MB(r1 - r0)}MB')
+        print(f'Allocated \t {MemCache.byte2MB(a1 - a0)}MB')
+        print(f'Free      \t {MemCache.byte2MB(f1 - f0)}MB')
+
+    def show_cuda_info(self):
+        t = torch.cuda.get_device_properties(0).total_memory
+        r = torch.cuda.memory_reserved(0)
+        a = torch.cuda.memory_allocated(0)
+        f = r - a
+
+        print('Cuda Info')
+        print(f'Total     \t{MemCache.byte2MB(t)} MB')
+        print(
+            f'Reserved  \t{MemCache.byte2MB(r)} [{MemCache.byte2MB(torch.cuda.max_memory_reserved(0))}] MB'
+        )
+        print(
+            f'Allocated \t{MemCache.byte2MB(a)} [{MemCache.byte2MB(torch.cuda.max_memory_allocated(0))}] MB'
+        )
+        print(f'Free      \t{MemCache.byte2MB(f)} MB')
+
+
+def allocatedMemoryOf(x: Union[torch.Tensor, torch.nn.Module]):
+    '''输出Tensor或者Module所占的内存大小(以MB为单位)
+
+    Parameters
+    ----------
+    x : Union[torch.Tensor, torch.nn.Module]
+        需要查看大小的Tensor或者Module
+    '''
+    if isinstance(x, torch.Tensor):
+        print(x.nelement() * x.element_size() / 1024 / 1024, 'MB')
+    elif isinstance(x, torch.nn.Module):
+        memAllocatedBytes = sum(p.nelement() * p.element_size()
+                                for p in x.parameters())
+        print(memAllocatedBytes / 1024 / 1024, 'MB')
