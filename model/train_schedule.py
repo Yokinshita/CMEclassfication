@@ -49,24 +49,31 @@ class ModelTrain:
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
         self.transform_repr = repr(transform)
-        self.cmedata = load_data.CMEdata(self.save_location,
-                                         self.selected_remarks,
-                                         self.train_percentage, transform)
+        # self.cmedata = load_data.CMEdata(self.save_location,
+        #                                  self.selected_remarks,
+        #                                  self.train_percentage, transform)
+        self.cmedata = load_data.CMEdataset(self.save_location,
+                                            self.selected_remarks,
+                                            self.train_percentage,
+                                            transform=transform)
+        self.train_dataset = self.cmedata.split(is_train=True)
+        self.test_dataset = self.cmedata.split(is_train=False)
         self.forcing_load_from_pic = forcing_load_from_pic
 
     def __create_folder(self, path_to_folder):
         if not os.path.exists(path_to_folder):
             os.makedirs(path_to_folder)
 
-    def __get_dataloader(self):
-        self.cmedata.load_data(self.forcing_load_from_pic)
-        train_dataset = self.cmedata.to_tensordataset(is_train=True)
-        test_dataset = self.cmedata.to_tensordataset(is_train=False)
+    @staticmethod
+    def __get_dataloader(train_dataset, test_dataset, batch_size):
+        # self.cmedata.load_data(self.forcing_load_from_pic)
+        # train_dataset = self.cmedata.to_tensordataset(is_train=True)
+        # test_dataset = self.cmedata.to_tensordataset(is_train=False)
         train_iter = torch.utils.data.DataLoader(train_dataset,
-                                                 self.batch_size,
+                                                 batch_size,
                                                  shuffle=True)
         test_iter = torch.utils.data.DataLoader(test_dataset,
-                                                self.batch_size,
+                                                batch_size,
                                                 shuffle=True)
         return train_iter, test_iter
 
@@ -84,8 +91,10 @@ class ModelTrain:
             return json.JSONEncoder.default(self, obj)
 
     def __save_para_info(self, train_info_path):
-        pos = self.cmedata.train_label.sum().item()
-        neg = self.cmedata.train_label.shape[0] - pos
+        # pos = self.cmedata.train_label.sum().item()
+        # neg = self.cmedata.train_label.shape[0] - pos
+        pos = self.train_dataset.cls_nums[1]
+        neg = self.train_dataset.cls_nums[0]
         para = {}
         para['lr'] = self.lr
         para['num_epochs'] = self.num_epochs
@@ -191,19 +200,25 @@ class ModelTrain:
         return decide_stop
 
     def fit(self, patience=5, metric='epoch_test_accu', mode='max'):
-        train_iter, test_iter = self.__get_dataloader()
+        train_iter, test_iter = self.__get_dataloader(self.train_dataset,
+                                                      self.test_dataset,
+                                                      self.batch_size)
         self.net = self.net.to(self.device)
         self.net.train()
         print('training on:', self.device)
         batch_count = 0
         # 计算总的iteration数量
+        # total_iterations = self.num_epochs * \
+        #     (int(self.cmedata.train_size/self.batch_size)+1)
         total_iterations = self.num_epochs * \
-            (int(self.cmedata.train_size/self.batch_size)+1)
+                            (int(len(self.train_dataset)/self.batch_size)+1)
         print('----------------------')
         print('Begin training:')
+        # print('total {} epoches, {} iterations each epoch'.format(
+        #     self.num_epochs,
+        #     int(self.cmedata.train_size / self.batch_size) + 1))
         print('total {} epoches, {} iterations each epoch'.format(
-            self.num_epochs,
-            int(self.cmedata.train_size / self.batch_size) + 1))
+            self.num_epochs, len(train_iter)))
         # 如果在终端输出更多信息，则tqdm的total应为总的iteration数，在每个batch结束后更新pbar
         # 如果不需要输出更多信息，则tqdm的total应为总的epoch数，在每个epoch结束后更新pbar
         if self.aloud:

@@ -2,8 +2,12 @@ import torch
 from PIL import Image
 import numpy as np
 import os
-from typing import Union
+import os.path
 from torchvision.transforms import functional as F
+from torchvision.datasets.vision import VisionDataset
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, Sequence
+from typing import Union
+
 
 
 def read_imgarray_from_singlepic(path_to_pic: str, transform) -> torch.Tensor:
@@ -216,6 +220,298 @@ class CMEdata:
             label = self.test_label
 
         return torch.utils.data.TensorDataset(feature, label)
+
+
+# *以下为新实现的数据集
+def pil_loader(path: str) -> Image.Image:
+    # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
+    img = Image.open(path).convert('L')
+    return img
+
+
+def has_file_allowed_extension(
+        filename: str, extensions: Union[str, Tuple[str, ...]]) -> bool:
+    """Checks if a file is an allowed extension.
+
+    Args:
+        filename (string): path to a file
+        extensions (tuple of strings): extensions to consider (lowercase)
+
+    Returns:
+        bool: True if the filename ends with one of given extensions
+    """
+    return filename.lower().endswith(
+        extensions if isinstance(extensions, str) else tuple(extensions))
+
+
+def folder_as_dataset(
+    directory: str,
+    class_index: int,
+    extensions: Optional[Union[str, Tuple[str, ...]]] = None,
+    is_valid_file: Optional[Callable[[str], bool]] = None,
+) -> List[Tuple[str, int]]:
+    '''将文件夹内所有的扩展名符合要求的文件路径和类编号作为元组返回
+
+    Parameters
+    ----------
+    directory : str
+        文件夹路径
+    class_index : int
+        类编号
+    extensions : Optional[Union[str, Tuple[str, ...]]], optional
+        符合要求的扩展名, by default None
+    is_valid_file : Optional[Callable[[str], bool]], optional
+        用以判断是否是符合要求的文件的函数, by default None
+
+    Returns
+    -------
+    List[Tuple[str, int]]
+        包含文件路径和类编号的列表，其中的每一个元素都是一个元组，每一个元组包含文件路径和类编号
+
+    Raises
+    ------
+    ValueError
+        当参数directory不是路径时触发
+    ValueError
+        当extensions和is_valid_file均为None时触发
+    '''
+    directory = os.path.expanduser(directory)
+    if not os.path.isdir(directory):
+        raise ValueError(
+            'parameter "directory" must be a directory,got {}'.format(
+                directory))
+
+    both_none = extensions is None and is_valid_file is None
+    both_something = extensions is not None and is_valid_file is not None
+    if both_none or both_something:
+        raise ValueError(
+            "Both extensions and is_valid_file cannot be None or not None at the same time"
+        )
+
+    if extensions is not None:
+
+        def is_valid_file(x: str) -> bool:
+            return has_file_allowed_extension(
+                x, extensions)  # type: ignore[arg-type]
+
+    is_valid_file = cast(Callable[[str], bool], is_valid_file)
+
+    instances = []
+
+    for root, _, fnames in sorted(os.walk(directory, followlinks=True)):
+        for fname in sorted(fnames):
+            path = os.path.join(root, fname)
+            if is_valid_file(path):
+                item = path, class_index
+                instances.append(item)
+
+    return instances
+
+
+class Subset(torch.utils.data.Dataset):
+    r"""
+    Subset of a dataset at specified indices.
+
+    Args:
+        dataset (Dataset): The whole Dataset
+        indices (sequence): Indices in the whole set selected for subset
+    """
+    dataset: torch.utils.data.Dataset
+    indices: Sequence[int]
+    _repr_indent = 4
+
+    def __init__(self, dataset: torch.utils.data.Dataset,
+                 indices: Sequence[int]) -> None:
+        self.dataset = dataset
+        self.indices = indices
+        subset_samples = [self.dataset.samples[i] for i in indices]
+        self.cls_nums = self._calculate_clsnums(subset_samples)
+
+    @staticmethod
+    def _calculate_clsnums(samples: List[Tuple[str, int]]) -> Dict[int, int]:
+        '''返回一个包含samples中每个类和该类数量的字典
+
+        Parameters
+        ----------
+        samples : List[Tuple[str, int]]
+            包含图片路径和所属类别的元组构成的列表
+
+        Returns
+        -------
+        Dict[int:int]
+            类别和该类别的样本数量所构成的字典
+        '''
+        cls_nums: dict[int:int] = {}
+        for filepath, class_idx in samples:
+            if class_idx not in cls_nums.keys():
+                cls_nums[class_idx] = 1
+            cls_nums[class_idx] += 1
+        return cls_nums
+
+    def __getitem__(self, idx):
+        if isinstance(idx, list):
+            return self.dataset[[self.indices[i] for i in idx]]
+        return self.dataset[self.indices[idx]]
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __repr__(self) -> str:
+        head = "Subset of " + self.dataset.__class__.__name__
+        body = [f"Number of datapoints: {self.__len__()}"]
+        if hasattr(self.dataset,
+                   "transforms") and self.dataset.transforms is not None:
+            body += [repr(self.dataset.transforms)]
+        lines = [head] + [" " * self._repr_indent + line for line in body]
+        return "\n".join(lines)
+
+
+class CMEdataset(VisionDataset):
+    """A generic data loader.
+
+    Args:
+        root (string): Root directory path.
+        selected_remarks (List[str]): CME pics with selected_remarks would be loaded
+        train_percentage(float):  percentage of size of train dataset to all dataset
+        loader (callable): A function to load a sample given its path.
+        extensions (tuple[string]): A list of allowed extensions.
+            both extensions and is_valid_file should not be passed.
+        transform (callable, optional): A function/transform that takes in
+            a sample and returns a transformed version.
+            E.g, ``transforms.RandomCrop`` for images.
+        target_transform (callable, optional): A function/transform that takes
+            in the target and transforms it.
+        is_valid_file (callable, optional): A function that takes path of a file
+            and check if the file is a valid file (used to check of corrupt files)
+            both extensions and is_valid_file should not be passed.
+
+     Attributes:
+        classes (list): List of the class names sorted alphabetically.
+        samples (list): List of (sample path, class_index) tuples
+        targets (list): The class_index value for each image in the dataset
+    """
+    def __init__(
+        self,
+        root: str,
+        selected_remarks: List[str],
+        train_percentage: float,
+        loader: Callable[[str], Any] = pil_loader,
+        transform: Optional[Callable] = None,
+        extensions: Optional[Tuple[str, ...]] = 'png',
+        target_transform: Optional[Callable] = None,
+        is_valid_file: Optional[Callable[[str], bool]] = None,
+    ) -> None:
+        super().__init__(root,
+                         transform=transform,
+                         target_transform=target_transform)
+        CMEclass_to_idx = {
+            selected_remark: 1
+            for selected_remark in selected_remarks
+        }
+        CMEdir = [
+            os.path.join(self.root, 'CME', selected_remark)
+            for selected_remark in selected_remarks
+        ]
+        NoCMEdir = os.path.join(self.root, 'No CME')
+        NoCMEclass_to_idx = 0
+        CMEsamples = self.make_dataset(CMEdir, CMEclass_to_idx, extensions,
+                                       is_valid_file)
+        NoCMEsamples = self.make_dataset(NoCMEdir, NoCMEclass_to_idx,
+                                         extensions, is_valid_file)
+        self.selected_remarks = selected_remarks
+        self.train_percentage = train_percentage
+        self.loader = loader
+        self.extensions = extensions
+
+        self.samples = CMEsamples + NoCMEsamples
+        self.targets = [s[1] for s in self.samples]
+
+    def split(self, is_train):
+        train_index, test_index = self._random_split(self.samples,
+                                                     self.train_percentage)
+        if is_train:
+            return Subset(self, train_index)
+        else:
+            return Subset(self, test_index)
+
+    @staticmethod
+    def make_dataset(
+        directory: Union[str, List[str]],
+        class_to_idx: Union[Dict[str, int], int],
+        extensions: Optional[Tuple[str, ...]] = None,
+        is_valid_file: Optional[Callable[[str], bool]] = None,
+    ) -> List[Tuple[str, int]]:
+        """Generates a list of samples of a form (path_to_sample, class).
+
+        This can be overridden to e.g. read files from a compressed zip file instead of from the disk.
+
+        Args:
+            directory (str): root dataset directory, corresponding to ``self.root``.
+            class_to_idx (Dict[str, int]): Dictionary mapping class name to class index.
+            extensions (optional): A list of allowed extensions.
+                Either extensions or is_valid_file should be passed. Defaults to None.
+            is_valid_file (optional): A function that takes path of a file
+                and checks if the file is a valid file
+                (used to check of corrupt files) both extensions and
+                is_valid_file should not be passed. Defaults to None.
+
+        Raises:
+            ValueError: In case ``class_to_idx`` is empty.
+            ValueError: In case ``extensions`` and ``is_valid_file`` are None or both are not None.
+            FileNotFoundError: In case no valid file was found for any class.
+
+        Returns:
+            List[Tuple[str, int]]: samples of a form (path_to_sample, class)
+        """
+        if class_to_idx is None:
+            raise ValueError("The class_to_idx parameter cannot be None.")
+        if isinstance(directory, str):
+            if not isinstance(class_to_idx, int):
+                raise ValueError(
+                    'When directory is str , class_to_idx should be int')
+            return folder_as_dataset(directory,
+                                     class_to_idx,
+                                     extensions=extensions,
+                                     is_valid_file=is_valid_file)
+        elif isinstance(directory, List):
+            filelst = []
+            for subdir in directory:
+                dir_basename = os.path.basename(subdir)
+                class_index = class_to_idx[dir_basename]
+                filelst.extend(
+                    folder_as_dataset(subdir,
+                                      class_index,
+                                      extensions=extensions,
+                                      is_valid_file=is_valid_file))
+            return filelst
+
+    def __getitem__(self, index: int) -> Tuple[Any, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (sample, target) where target is class_index of the target class.
+        """
+        path, target = self.samples[index]
+        sample = self.loader(path)
+        if self.transform is not None:
+            sample = self.transform(sample)
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return sample, target
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    @staticmethod
+    def _random_split(samples, train_percentage: float) -> Tuple[List, List]:
+        permed_indices = torch.randperm(len(samples)).tolist()
+        split = int(len(samples) * train_percentage)
+        train_index = permed_indices[:split]
+        test_index = permed_indices[split:]
+        return train_index, test_index
 
 
 if __name__ == '__main__':
