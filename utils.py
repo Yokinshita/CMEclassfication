@@ -235,16 +235,20 @@ class CenterCrop:
             for i in range(image.shape[0]):
                 image[i][self.mask] = self.value
             return image
-        if isinstance(image, torch.Tensor):
+        elif isinstance(image, torch.Tensor):
             tensormask = torch.from_numpy(self.mask)
             for i in range(image.shape[0]):
                 image[i][tensormask] = self.value
             return image
+        else:
+            raise ValueError(
+                'Input array must be np.ndarray or torch.Tensor, got {} '.
+                format(image.__class__.__name__))
 
     def __repr__(self):
-        str = self.__class__.__name__ + '(fmat:{}, set center value to {})'.format(
+        string = self.__class__.__name__ + '(fmat:{}, set center value to {})'.format(
             self.fmat, self.value)
-        return str
+        return string
 
 
 def showArrayRange(arr: np.ndarray) -> tuple:
@@ -412,3 +416,21 @@ def allocatedMemoryOf(x: Union[torch.Tensor, torch.nn.Module]):
         memAllocatedBytes = sum(p.nelement() * p.element_size()
                                 for p in x.parameters())
         print(memAllocatedBytes / 1024 / 1024, 'MB')
+
+
+class ToTensorNoDiv255:
+    '''将PIL.Image转化为torch.Tensor，形状为CHW
+    该类不会像torchvision.transform.ToTensor那样将数值除以255
+    '''
+    def __call__(self, pic):
+        img = torch.from_numpy(np.array(pic, copy=True))
+        img = img.view(pic.size[1], pic.size[0], len(pic.getbands()))
+        # put it from HWC to CHW format
+        img = img.permute((2, 0, 1)).contiguous()
+        if isinstance(img, torch.ByteTensor):
+            return img.to(torch.float)
+        else:
+            return img
+
+    def __repr__(self):
+        return self.__class__.__name__ + '()'
