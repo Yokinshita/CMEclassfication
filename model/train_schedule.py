@@ -45,6 +45,7 @@ class ModelTrain:
         self.current_time = time.strftime("%Y_%m_%d_%H_%M_%S",
                                           time.localtime())
         self.log_path = os.path.join(para_dict['log_path'], self.current_time)
+        self.__create_folder(self.log_path)
         self.writer = SummaryWriter(self.log_path)
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
@@ -106,7 +107,7 @@ class ModelTrain:
         para['CME_count'] = pos
         para['No_CME_count'] = neg
         para['CME:NO CME'] = '{}:1'.format(pos / neg)
-        para['Net'] = self.net
+        para['Net'] = repr(net).replace('\n', '').replace(' ', '')
         para['lr_scheduler'] = self.scheduler
         para['transform'] = self.transform_repr
         filename = os.path.join(train_info_path, 'para.json')
@@ -288,7 +289,9 @@ class ModelTrain:
         finally:
             pbar.close()
             print('Finish training')
-            self.save_info()
+            self.__save_epoch_info(self.log_path)
+            self.__save_para_info(self.log_path)
+            print('Save training detailed infomation to {}'.format(self.log_path))
             self.writer.close()
 
     def infer(self, path: str):
