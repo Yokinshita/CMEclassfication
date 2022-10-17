@@ -107,7 +107,7 @@ class ModelTrain:
         para['CME_count'] = pos
         para['No_CME_count'] = neg
         para['CME:NO CME'] = '{}:1'.format(pos / neg)
-        para['Net'] = repr(net).replace('\n', '').replace(' ', '')
+        para['Net'] = repr(self.net).replace('\n', '').replace(' ', '')
         para['lr_scheduler'] = self.scheduler
         para['transform'] = self.transform_repr
         filename = os.path.join(train_info_path, 'para.json')
@@ -167,7 +167,7 @@ class ModelTrain:
                 y_hat = self.net(X)
                 l = self.loss(y_hat, y)
                 test_l_sum += l.cpu().item()
-                num_accu += (torch.argmax(self.net(X),
+                num_accu += (torch.argmax(y_hat,
                                           dim=1) == y).sum().item()
                 total += X.shape[0]
                 batch_count += 1

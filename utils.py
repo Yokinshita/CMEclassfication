@@ -423,12 +423,44 @@ class ToTensorNoDiv255:
     该类不会像torchvision.transform.ToTensor那样将数值除以255
     '''
     def __call__(self, pic):
-        img = torch.from_numpy(np.array(pic, copy=True))
+        """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
+        This function does not support torchscript.
+
+        See :class:`~torchvision.transforms.ToTensor` for more details.
+
+        Args:
+            pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
+
+        Returns:
+            Tensor: Converted image.
+        """
+
+        default_float_dtype = torch.get_default_dtype()
+
+        if isinstance(pic, np.ndarray):
+            # handle numpy array
+            if pic.ndim == 2:
+                pic = pic[:, :, None]
+
+            img = torch.from_numpy(pic.transpose((2, 0, 1))).contiguous()
+            # backward compatibility
+            if isinstance(img, torch.ByteTensor):
+                return img.to(dtype=default_float_dtype)
+            else:
+                return img
+
+        # handle PIL Image
+        mode_to_nptype = {"I": np.int32, "I;16": np.int16, "F": np.float32}
+        img = torch.from_numpy(np.array(pic, mode_to_nptype.get(pic.mode, np.uint8), copy=True))
+
+        if pic.mode == "1":
+            img = 255 * img
         img = img.view(pic.size[1], pic.size[0], len(pic.getbands()))
         # put it from HWC to CHW format
         img = img.permute((2, 0, 1)).contiguous()
+        # *在有无div(255)时参数可以更新，accu,loss均会变化
         if isinstance(img, torch.ByteTensor):
-            return img.to(torch.float)
+            return img.to(dtype=default_float_dtype)
         else:
             return img
 
