@@ -428,10 +428,11 @@ def DDTThirdParty(imgs: np.ndarray, net: torch.nn.Module):
                             -1).max(dim=1)[0].unsqueeze(1).unsqueeze(1)
     project_map /= maxv
 
-    project_map = F.interpolate(project_map.unsqueeze(1),
-                                size=(imgs.shape[2], imgs.shape[3]),
-                                mode='nearest',
-                                ) * 255.
+    project_map = F.interpolate(
+        project_map.unsqueeze(1),
+        size=(imgs.shape[2], imgs.shape[3]),
+        mode='nearest',
+    ) * 255.
 
     return project_map.detach().numpy()
 
@@ -456,15 +457,22 @@ def colorMapImage(imgs: np.ndarray,
 
     output_imgs = np.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3], 3),
                            dtype=np.uint8)
-    masks = np.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3], 3),
-                     dtype=np.uint8)
+    # 为了防止错误，强制输入的imgs为np.uint8类型
+    if not np.issubdtype(imgs.dtype, np.uint8):
+        raise ValueError(
+            'Input imgs dtype only accept np.uint8 , but got {}'.format(
+                imgs.dtype))
     for i in range(imgs.shape[0]):
         # img = cv2.resize(cv2.imread(os.path.join('./data', name)), (224, 224)) #读取为BGR格式
         # 将project_map repeat为(3,H,W)再转置为(H,W,3)
         # 这里的mask类似于自己的IndicatorMat
         mask = np.tile(project_map[i], reps=(3, 1, 1)).transpose(1, 2, 0)
-        mask = cv2.applyColorMap(mask.astype(np.uint8), mode)
+        # *cv2默认图像格式为BGR，cvtColor转换得到的格式也为BGR，
+        # *因此交给plt显示时需要转换为RGB格式，否则会产生色差
+        mask = cv2.cvtColor(cv2.applyColorMap(mask.astype(np.uint8), mode),
+                            cv2.COLOR_BGR2RGB)
         # addWeighted接受的两个数组应当为同样形状：HWC，因此将imgs[i]转为HWC形状
+        # *output_imgs比较暗的原因是img在[0,1]区间，与mask加权相乘后基本不影响最后的图片
         img = np.tile(imgs[i], (3, 1, 1)).transpose(1, 2, 0).astype('uint8')
         output_img = cv2.addWeighted(img, 0.5, mask, 0.5, 0.0)
         output_imgs[i] = output_img
@@ -489,6 +497,8 @@ def toColorMap(project_maps: np.ndarray, mode=cv2.COLORMAP_JET):
                             dtype=np.uint8)
     for i in range(project_maps.shape[0]):
         mask = np.tile(project_maps[i], reps=(3, 1, 1)).transpose(1, 2, 0)
-        mask = cv2.applyColorMap(mask.astype(np.uint8), mode)
+        # *cv2默认图像格式为BGR，cvtColor转换得到的格式也为BGR，因此交给plt显示时需要转换为RGB格式
+        mask = cv2.cvtColor(cv2.applyColorMap(mask.astype(np.uint8), mode),
+                            cv2.COLOR_BGR2RGB)
         colored_maps[i] = mask
     return colored_maps
