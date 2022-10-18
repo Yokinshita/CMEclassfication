@@ -4,8 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import torch
 from natsort import natsorted
-from typing import Union
-from torchvision.transforms import functional as F
+from typing import Union, List
 import gc
 
 
@@ -85,12 +84,13 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
             os.path.join(path, preffix + '{}.png'.format(i)))
 
 
-def drawImageArrays(*arrays):
+def drawImageArrays(*arrays, title: List[str] = None):
     '''绘制多个图像数组，这些图像数组应当具有同样的形状，为NHWC
     
     Parameters:
     -----------
     array : 待绘制的图像数组，形状为NHWC。
+    title : 对每一个图像数组的标注，为str
     '''
     column = len(arrays)
     row = arrays[0].shape[0]
@@ -99,11 +99,21 @@ def drawImageArrays(*arrays):
             raise ValueError(
                 'First dimension of all array expected to be the same. Expected {} got {}'
                 .format(row, array.shape[0]))
+    if title is not None:
+        if len(title) != column:
+            raise ValueError(
+                'Each array should have a title , got {} titles but have {} arrays'
+                .format(len(title), column))
     plt.figure(figsize=(4 * column, 4 * row))
     for j in range(column):
         for i in range(row):
             plt.subplot(row, column, i * column + j + 1)
-            plt.title(str(i), fontsize=10, color='white')
+            if title is not None:
+                plt.title('{} {}'.format(title[j], i),
+                          fontsize=10,
+                          color='black')
+            else:
+                plt.title(str(i), fontsize=10, color='black')
             if arrays[j][i].shape[2] == 1:
                 plt.imshow(arrays[j][i], cmap='gray')  # 图片是灰度图的情况
             elif arrays[j][i].shape[2] == 3:
@@ -161,12 +171,12 @@ def showImg(arr: np.ndarray):
 
 
 def grayImageToRGB(arr: np.ndarray) -> np.ndarray:
-    '''将灰度图像的通道复制三份，成为RGB图像
+    '''将单通道图像的通道复制三份，成为RGB图像
 
     Parameters
     ----------
     arr : np.ndarray
-        灰度图像，形状为HW或者NHW
+        单通道图像，形状为HW或者NHW
 
     Returns
     -------
@@ -176,16 +186,16 @@ def grayImageToRGB(arr: np.ndarray) -> np.ndarray:
     Raises
     ------
     ValueError
-        图像的维度必须为2，否则会引发ValueError
+        图像的维度必须为2或者3
     '''
     if arr.ndim == 3:
         return np.concatenate((np.expand_dims(arr, 3), np.expand_dims(
             arr, 3), np.expand_dims(arr, 3)),
-                              axis=3).astype('uint8')
+                              axis=3)
     elif arr.ndim == 2:
         return np.concatenate((np.expand_dims(arr, 2), np.expand_dims(
             arr, 2), np.expand_dims(arr, 2)),
-                              axis=2).astype('uint8')
+                              axis=2)
     else:
         raise ValueError(
             'Dimensions of input array must be 3(NHW) or 2(HW),got {}'.format(
@@ -451,7 +461,8 @@ class ToTensorNoDiv255:
 
         # handle PIL Image
         mode_to_nptype = {"I": np.int32, "I;16": np.int16, "F": np.float32}
-        img = torch.from_numpy(np.array(pic, mode_to_nptype.get(pic.mode, np.uint8), copy=True))
+        img = torch.from_numpy(
+            np.array(pic, mode_to_nptype.get(pic.mode, np.uint8), copy=True))
 
         if pic.mode == "1":
             img = 255 * img
