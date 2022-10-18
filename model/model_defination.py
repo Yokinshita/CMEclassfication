@@ -81,10 +81,16 @@ class LeNet5(nn.Module):
             nn.Conv2d(20, 50, 5),  #N*50*106*106
             nn.ReLU(),
             nn.MaxPool2d(2, 2))  #N*50*53*53
-        self.fc = nn.Sequential(nn.Linear(50 * 25 * 25, 120), nn.ReLU(),
-                                nn.Dropout(drop_prob), nn.Linear(120, 84),
-                                nn.ReLU(), nn.Dropout(drop_prob),
-                                nn.Linear(84, num_classes))
+        if size == 224:
+            self.fc = nn.Sequential(nn.Linear(50 * 53 * 53, 120), nn.ReLU(),
+                                    nn.Dropout(drop_prob), nn.Linear(120, 84),
+                                    nn.ReLU(), nn.Dropout(drop_prob),
+                                    nn.Linear(84, num_classes))
+        elif size == 112:
+            self.fc = nn.Sequential(nn.Linear(50 * 25 * 25, 120), nn.ReLU(),
+                                    nn.Dropout(drop_prob), nn.Linear(120, 84),
+                                    nn.ReLU(), nn.Dropout(drop_prob),
+                                    nn.Linear(84, num_classes))
 
     def forward(self, x):
         x = self.resize(x)
