@@ -152,7 +152,7 @@ def isInside(point: tuple, xBound: tuple, yBound: tuple) -> bool:
 
 
 def getConnectedComponet(reSizedIndicator: np.ndarray) -> tuple:
-    """找到指示矩阵中的最大连通分量
+    """找到指示矩阵中所有的连通分量
 
     Parameters
     ----------
@@ -240,8 +240,21 @@ def getConnectedComponet(reSizedIndicator: np.ndarray) -> tuple:
     return mask, componentIndex
 
 
-def getLargestConnectedComponent(mask, componetIndex) -> np.ndarray:
-    """获取最大连通分量"""
+def getLargestConnectedComponent(mask:np.ndarray, componetIndex:int) -> np.ndarray:
+    '''从连通分量构成的mask中获取其中的最大连通分量
+
+    Parameters
+    ----------
+    mask : np.ndarray
+        连通分量的遮罩,形状为HW,mask中大于0的值表示连通分量,不同的大于0的值表示不同的连通分量。
+    componentIndex : int
+        表示连通分量的个数
+
+    Returns
+    -------
+    np.ndarray
+        最大连通分量，形状为HW。其中值为1的像素点就是最大连通分量
+    '''
     largestComponent = np.zeros_like(mask)
     # *此处生成的componentNumlist序列
     # *由于range(1,componetIndex)不包含componetIndex
@@ -253,6 +266,26 @@ def getLargestConnectedComponent(mask, componetIndex) -> np.ndarray:
     largestComponetIndex = np.argmax(componetNumlist) + 1
     largestComponent[mask == largestComponetIndex] = 1
     return largestComponent
+
+
+def getLargestComponent(arr: np.ndarray) -> np.ndarray:
+    '''得到数组的最大连通分量
+
+    Parameters
+    ----------
+    arr : np.ndarray
+        输入数组，形状为N1HW，仅在arr>0处寻找连通分量.
+
+    Returns
+    -------
+    np.ndarray
+        数组得到的最大连通分量，形状为NHW。其中值为1的部分就是最大连通分量。
+    '''
+    largestcomp = np.zeros((arr.shape[0], arr.shape[2], arr.shape[3]))
+    for i in range(arr.shape[0]):
+        mask, compIndex = getConnectedComponet(arr[i][0])
+        largestcomp[i] = getLargestConnectedComponent(mask, compIndex)
+    return largestcomp.astype('uint8')
 
 
 def DDT(imgs: np.ndarray, net: torch.nn.Module) -> np.ndarray:
