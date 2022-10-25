@@ -4,11 +4,12 @@ import matplotlib.pyplot as plt
 import os
 import torch
 from natsort import natsorted
-from typing import Union, List
+from typing import Union, List, Callable, Optional
 import gc
+import cv2
 
 
-def loadSingleImg(path: str, transform: callable) -> np.ndarray:
+def loadSingleImg(path: str, transform: Optional[Callable]) -> np.ndarray:
     """
     载入单张图片，形状为NCHW
     """
@@ -24,7 +25,7 @@ def loadSingleImg(path: str, transform: callable) -> np.ndarray:
 
 def loadImageFolder(
     path_to_folder: str,
-    transform: callable = None,
+    transform: Optional[Callable] = None,
     ordering: bool = True,
 ) -> np.ndarray:
     """
@@ -200,6 +201,27 @@ def grayImageToRGB(arr: np.ndarray) -> np.ndarray:
         raise ValueError(
             'Dimensions of input array must be 3(NHW) or 2(HW),got {}'.format(
                 arr.ndim))
+
+
+def applyMaskOnImage(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    '''将遮罩应用到图片数组上，并返回应用mask后的图片数组
+
+    Parameters
+    ----------
+    img : np.ndarray
+        图片数组，形状为NHW或NHWC
+    mask : np.ndarray
+        图片遮罩，值为0/1，形状为NHW，为uint8
+
+    Returns
+    -------
+    np.ndarray
+        遮罩后图片数组，形状为NHW或NHWC，类型与输入数组相同
+    '''
+    maskedArray = np.zeros_like(img, dtype=img.dtype)
+    for i in range(img.shape[0]):
+        maskedArray[i] = cv2.bitwise_and(img[i], img[i], mask=mask[i])
+    return maskedArray
 
 
 class CenterCrop:
