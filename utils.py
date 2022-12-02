@@ -36,7 +36,7 @@ def loadImageFolder(
     pics = os.listdir(path_to_folder)
     # 首先载入第一张图片
     if ordering is True:
-        pics = natsorted(pics)  #对文件按照名称排序
+        pics = natsorted(pics)  # 对文件按照名称排序
     imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]), transform)
     for i in range(1, len(pics)):
         img = loadSingleImg(os.path.join(path_to_folder, pics[i]), transform)
@@ -85,7 +85,7 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
             os.path.join(path, preffix + '{}.png'.format(i)))
 
 
-def drawImageArrays(*arrays, title: List[str] = None):
+def drawImageArrays(*arrays, title: Optional[List[str]] = None):
     '''绘制多个图像数组，这些图像数组应当具有同样的形状，为NHWC
     
     Parameters:
@@ -121,6 +121,32 @@ def drawImageArrays(*arrays, title: List[str] = None):
                 plt.imshow(arrays[j][i])  # 图片是RGB的情况
             plt.xticks(())
             plt.yticks(())
+    plt.show()
+
+
+def drawImageArrayInFlat(image: np.ndarray, cols=5) -> None:
+    '''以平铺的布局绘制image数组
+
+    Parameters
+    ----------
+    image : np.ndarray
+        需要绘制的数组，形状为NHW或NHWC
+    cols : int, optional
+        每一行绘制的图片数, by default 5
+    '''
+    from math import ceil
+    nums = len(image)
+    rows = ceil(nums / cols)
+    plt.figure(figsize=(cols * 5, rows * 5))
+    ind = 0
+    for i in range(rows):
+        for j in range(cols):
+            ax = plt.subplot(rows, cols, ind + 1)
+            ax.imshow(image[ind])
+            ax.set_title(str(ind))
+            ind += 1
+            if ind >= nums:
+                break
     plt.show()
 
 
