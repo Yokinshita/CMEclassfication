@@ -86,11 +86,11 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
 
 
 def drawImageArrays(*arrays, title: Optional[List[str]] = None):
-    '''绘制多个图像数组，这些图像数组应当具有同样的形状，为NHWC
+    '''绘制多个图像数组，这些图像数组的第一维应当相同，它们的形状为NHWC或NHW
     
     Parameters:
     -----------
-    array : 待绘制的图像数组，形状为NHWC。
+    array : 待绘制的图像数组，形状为NHWC或NHW。
     title : 对每一个图像数组的标注，为str
     '''
     column = len(arrays)
@@ -100,6 +100,10 @@ def drawImageArrays(*arrays, title: Optional[List[str]] = None):
             raise ValueError(
                 'First dimension of all array expected to be the same. Expected {} got {}'
                 .format(row, array.shape[0]))
+        if array.ndim != 3 and array.ndim != 4:
+            raise ValueError(
+                'Array expected to be 3 or 4 dimensional, got {} dimensional array'
+                .format(array.ndim))
     if title is not None:
         if len(title) != column:
             raise ValueError(
@@ -115,10 +119,10 @@ def drawImageArrays(*arrays, title: Optional[List[str]] = None):
                           color='black')
             else:
                 plt.title(str(i), fontsize=10, color='black')
-            if arrays[j][i].shape[2] == 1:
+            if arrays[j][i].ndim == 3 and arrays[j][i].shape[2] == 3:
+                plt.imshow(arrays[j][i])  # 图片形状是NHWC(RGB)的情况
+            else:
                 plt.imshow(arrays[j][i], cmap='gray')  # 图片是灰度图的情况
-            elif arrays[j][i].shape[2] == 3:
-                plt.imshow(arrays[j][i])  # 图片是RGB的情况
             plt.xticks(())
             plt.yticks(())
     plt.show()
@@ -142,7 +146,10 @@ def drawImageArrayInFlat(image: np.ndarray, cols=5) -> None:
     for i in range(rows):
         for j in range(cols):
             ax = plt.subplot(rows, cols, ind + 1)
-            ax.imshow(image[ind])
+            if image.ndim == 4 and image.shape[3] == 3:
+                ax.imshow(image[ind])
+            else:
+                ax.imshow(image[ind], cmap='gray')
             ax.set_title(str(ind))
             ind += 1
             if ind >= nums:
