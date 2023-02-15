@@ -30,12 +30,13 @@ def get_CME_month_datetime_list(year, month):
         # 若此次事件的Central PA栏中标记为Halo，则在本次事件的remark中添加halo
         is_halo = node.xpath(
             './td[@headers="hd_cpa"]/text()')[0].strip() == 'Halo'
+        # *2023年2月3日发现在网页的remarks字段中添加了'<! Remark>\n'，需要去除
         if is_halo:
-            remarks = node.xpath(
-                './td[@headers="hd_remark"]/text()')[0].strip()+'Halo'
+            remarks = node.xpath('./td[@headers="hd_remark"]/text()')[0].strip(
+            ).strip('<! Remark>\n') + 'Halo'
         else:
-            remarks = node.xpath(
-                './td[@headers="hd_remark"]/text()')[0].strip()
+            remarks = node.xpath('./td[@headers="hd_remark"]/text()')[0].strip(
+            ).strip('<! Remark>\n')
         start_end_time_partial_url = node.xpath(
             './td[@headers="hd_date_time"][1]/a/@href')[0]  # 路径前若不加点，则代表向该节点的绝对路径，会出错
         start_end_time_url = '/'.join(CME_month_list_url.split('/')
