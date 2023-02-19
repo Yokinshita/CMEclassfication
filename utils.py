@@ -7,6 +7,7 @@ from natsort import natsorted
 from typing import Union, List, Callable, Optional
 import gc
 import cv2
+from datetime import datetime
 
 
 def loadSingleImg(path: str, transform: Optional[Callable]) -> np.ndarray:
@@ -532,3 +533,57 @@ class ToTensorNoDiv255:
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
+
+
+def downloadLascoImageBetween(start: datetime,
+                              end: datetime,
+                              imagePath: str = '/',
+                              imageType: str = 'both'):
+    '''下载给定起始时间段内的日冕仪图像
+
+    note: datetime.strptime函数的格式化形式类似%Y%m%d_%H%M%S
+    
+    Parameters
+    ----------
+    start : datetime
+        起始时间
+    end : datetime
+        结束时间
+    picPath : str, optional
+        图片文件保存目录, by default 'pic'
+    picType : str, optinal
+        下载图片的类型，可为C2，C3或both
+    '''
+    import requests
+    from urllib import parse
+    import re
+
+    if imageType.lower() == 'c2':
+        picHrefRegex = re.compile(r'<a href="(\d{8}_\d{6}_lasc2rdf.png)">')
+    elif imageType.lower() == 'c3':
+        picHrefRegex = re.compile(r'<a href="(\d{8}_\d{6}_lasc3rdf.png)">')
+    elif imageType.lower() == 'both':
+        picHrefRegex = re.compile(r'<a href="(\d{8}_\d{6}_lasc\drdf.png)">')
+    else:
+        raise ValueError(
+            'Argument picType must be either c2, c3 or both, got {}'.format(
+                imageType))
+    if not os.path.exists(imagePath):
+        os.mkdir(imagePath)
+    CMEdailyPicsURL = 'https://cdaw.gsfc.nasa.gov/images/soho/lasco/{0:}/{1:0>2d}/{2:0>2d}/'.format(
+        start.year, start.month, start.day)
+    dailyPicPage = requests.get(CMEdailyPicsURL)
+    hrefs = picHrefRegex.findall(dailyPicPage.text)  # 包含图片文件名的列表
+    picDatetimeRegex = re.compile(r'(\d{8}_\d{6})_')  # 用来识别href中图片时间的正则表达式
+    for i, href in enumerate(hrefs):
+        picTime = picDatetimeRegex.findall(hrefs[i])[0]
+        picTime = datetime.strptime(picTime, '%Y%m%d_%H%M%S')
+        if start <= picTime <= end:
+            picURL = parse.urljoin(CMEdailyPicsURL, href)
+            try:
+                res = requests.get(picURL)
+            except Exception:
+                print('Error:downloading pic {} fail'.format(href))
+                continue
+            with open(os.path.join(imagePath, href), 'wb') as f:
+                f.write(res.content)

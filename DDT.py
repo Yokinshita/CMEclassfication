@@ -478,7 +478,7 @@ def colorMapImage(imgs: np.ndarray,
     Parameters
     ----------
     imgs : np.ndarray
-        原图片，形状为NCHW
+        原图片，形状为NCHW，类型为uint8，值在[0,255]内
     project_map : np.ndarray
         DDT算法得到的投影特征图，形状为NHW
     
