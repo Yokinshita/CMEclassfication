@@ -58,7 +58,6 @@ def download_sigle_pic(pic_url: str, save_location: str, remark: str, is_CME: bo
             return None
         with open(os.path.join(save_location, 'CME', remark, pic_filename), 'wb') as f:
             f.write(res.content)
-            print('{} download complete'.format(pic_filename))
     else:  # 若不是CME
         create_file(os.path.join(save_location, 'No CME'))
         try:
@@ -68,7 +67,6 @@ def download_sigle_pic(pic_url: str, save_location: str, remark: str, is_CME: bo
             return None
         with open(os.path.join(save_location, 'No CME', pic_filename), 'wb') as f:
             f.write(res.content)
-            print('{} download complete'.format(pic_filename))
 
 
 def get_daily_pic_list(year, month, day, CME_month_appear_datetime_list):
