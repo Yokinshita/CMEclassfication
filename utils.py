@@ -587,3 +587,87 @@ def downloadLascoImageBetween(start: datetime,
                 continue
             with open(os.path.join(imagePath, href), 'wb') as f:
                 f.write(res.content)
+
+
+def downloadLascoImageAt(imageTime: datetime,
+                         folderPath: str = '/',
+                         imageType: Optional[str] = None) -> bool:
+    '''下载某一时刻的Lasco日冕仪差分图像
+
+    Parameters
+    ----------
+    imageTime : datetime.datetime
+        日冕仪差分图像的时刻,
+        datetime.strptime函数的格式化形式类似%Y/%m/%d %H:%M:%S
+    folderPath : str, optional
+        下载图片存放文件夹, by default '/'
+    imageType : Optional[str], optional
+        差分图像类型, by default None
+
+    Returns
+    -------
+    bool
+        下载若成功则返回True
+    '''
+    from urllib import parse
+    import requests
+
+    if not os.path.exists(folderPath):
+        os.mkdir(folderPath)
+    if imageType:
+        imageType = imageType.lower()
+    picFileNameC2 = '{}{:0>2d}{:0>2d}_{:0>2d}{:0>2d}{:0>2d}_lasc2rdf.png'.format(
+        imageTime.year, imageTime.month, imageTime.day, imageTime.hour,
+        imageTime.minute, imageTime.second)
+    picFileNameC3 = '{}{:0>2d}{:0>2d}_{:0>2d}{:0>2d}{:0>2d}_lasc3rdf.png'.format(
+        imageTime.year, imageTime.month, imageTime.day, imageTime.hour,
+        imageTime.minute, imageTime.second)
+    CMEdailyImageURL = 'https://cdaw.gsfc.nasa.gov/images/soho/lasco/{0:}/{1:0>2d}/{2:0>2d}/'.format(
+        imageTime.year, imageTime.month, imageTime.day)
+    imageURLC2 = parse.urljoin(CMEdailyImageURL, picFileNameC2)
+    imageURLC3 = parse.urljoin(CMEdailyImageURL, picFileNameC3)
+    resC2 = requests.get(imageURLC2)
+    resC3 = requests.get(imageURLC3)
+    if resC2.status_code == 200:
+        res = resC2
+        picFileName = picFileNameC2
+    elif resC3.status_code == 200:
+        res = resC3
+        picFileName = picFileNameC3
+    else:
+        return False
+    with open(os.path.join(folderPath, picFileName), 'wb') as f:
+        f.write(res.content)
+    return True
+
+
+def downloadLascoImageFromDetailedInfo(url: str,
+                                       folderPath: str = '/') -> None:
+    '''从CME日志详细记录页中下载对应时间的CME差分图片
+
+    Parameters
+    ----------
+    url : str
+        CME日志详细记录页的URL
+    folderPath : str, optional
+        下载图片存放文件夹路径, by default '/'
+    '''
+
+    import requests
+    import re
+
+    if not os.path.exists(folderPath):
+        os.mkdir(folderPath)
+    res = requests.get(url)
+    regex = re.compile(r'(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}).*C(\d)')
+    recordBeginRow = None
+    for i, row in enumerate(res.text.split('\n')):
+        if row.startswith('# HEIGHT'):
+            recordBeginRow = i
+        if recordBeginRow and i > recordBeginRow:
+            regexSearch = regex.findall(row)
+            if regexSearch:
+                imageTime = regexSearch[0][0]
+                imageType = 'c' + regexSearch[0][1]
+                imageTime = datetime.strptime(imageTime, '%Y/%m/%d %H:%M:%S')
+                downloadLascoImageAt(imageTime, folderPath, imageType)
