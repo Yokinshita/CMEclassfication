@@ -24,24 +24,44 @@ def loadSingleImg(path: str, transform: Optional[Callable]) -> np.ndarray:
     return img
 
 
-def loadImageFolder(
-    path_to_folder: str,
-    transform: Optional[Callable] = None,
-    ordering: bool = True,
-) -> np.ndarray:
-    """
-    载入给定文件夹中的所有图片，形状为NCHW
+def loadImageFolder(path_to_folder: str,
+                    transform: Optional[Callable] = None,
+                    ordering: bool = True,
+                    regex: Optional[str] = None) -> np.ndarray:
+    '''载入给定文件夹内文件名匹配regex成功的图片，并返回一个形状为NCHW的数组
 
-    返回np.ndarray
-    """
+    Parameters
+    ----------
+    path_to_folder : str
+        文件夹路径
+    transform : Optional[Callable], optional
+        对图片进行的变换, by default None
+    ordering : bool, optional
+        若为True,则将对文件名进行自然排序后载入, by default True
+    regex : Optional[str], optional
+        文件名应当符合的正则表达式,若为None,则载入所有图片, by default None
+
+    Returns
+    -------
+    np.ndarray
+        文件夹图片组成得到的数组，形状为NCHW
+    '''
+    import re
+
     pics = os.listdir(path_to_folder)
-    # 首先载入第一张图片
-    if ordering is True:
+    if ordering:
         pics = natsorted(pics)  # 对文件按照名称排序
-    imgs = loadSingleImg(os.path.join(path_to_folder, pics[0]), transform)
-    for i in range(1, len(pics)):
-        img = loadSingleImg(os.path.join(path_to_folder, pics[i]), transform)
-        imgs = np.concatenate((imgs, img), axis=0)
+    imgs = []
+    for pic in pics:
+        if regex:
+            if re.search(regex, pic):
+                img = loadSingleImg(os.path.join(path_to_folder, pic),
+                                    transform)
+                imgs.append(img)
+        else:
+            img = loadSingleImg(os.path.join(path_to_folder, pic), transform)
+            imgs.append(img)
+    imgs = np.concatenate(imgs, axis=0)
     return imgs
 
 
@@ -88,7 +108,7 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
 
 def drawImageArrays(*arrays, title: Optional[List[str]] = None):
     '''绘制多个图像数组，这些图像数组的第一维应当相同，它们的形状为NHWC或NHW
-    
+
     Parameters:
     -----------
     array : 待绘制的图像数组，形状为NHWC或NHW。
@@ -542,7 +562,7 @@ def downloadLascoImageBetween(start: datetime,
     '''下载给定起始时间段内的日冕仪图像
 
     note: datetime.strptime函数的格式化形式类似%Y%m%d_%H%M%S
-    
+
     Parameters
     ----------
     start : datetime
