@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import torch
 from natsort import natsorted
-from typing import Union, List, Callable, Optional
+from typing import Union, List, Callable, Optional, Tuple
 import gc
 import cv2
 from datetime import datetime
@@ -336,6 +336,70 @@ class CenterCrop:
         string = self.__class__.__name__ + '(fmat:{}, Radius={}, CenterValue={})'.format(
             self.fmat, self.radius, self.value)
         return string
+
+
+class PylonCrop():
+    def __init__(
+            self,
+            angle: int,
+            width: Union[Tuple[int, int], int],
+            center: Tuple[int, int] = (256, 242),
+    ):
+        '''遮挡C3日冕仪图像上的挡杆，返回遮挡处理后的图像
+
+        Parameters
+        ----------
+        center : Tuple[int, int], default (256, 244)
+            图像中心点坐标[x,y]
+        angle : int
+            挡杆位置的中心角度
+        width : Union[Tuple[int, int], int]
+            遮挡范围的宽度，当为整数时，遮挡范围为[angle-width, angle+width]，
+            当为元组时，遮挡范围为[angle-width[0], angle+width[1]]
+        '''
+        self.center = center
+        self.angle = angle
+        self.width = width
+
+    @staticmethod
+    def atan2(dx, dy):
+        from math import degrees, atan
+        # 图像的坐标系的x,y轴正方向分别向右、向下，与一般坐标系不同，dx,dy的正负需要考虑此不同点
+        if dx <= 0 and dy < 0:
+            return degrees(atan(dx / dy))
+        elif dx < 0 and dy == 0:
+            return 90
+        elif dx < 0 and dy > 0:
+            return degrees(atan(dy / -dx)) + 90
+        elif dx == 0 and dy > 0:
+            return 180
+        elif dx > 0 and dy > 0:
+            return degrees(atan(dx / dy)) + 180
+        elif dx > 0 and dy == 0:
+            return 270
+        elif dx > 0 and dy < 0:
+            return degrees(atan(-dy / dx)) + 270
+        else:
+            return 0
+
+    def __call__(self, img: np.ndarray):
+        mask = np.ones_like(img)
+        if type(self.width) == int:
+            angleRange = [self.angle - self.width, self.angle + self.width]
+        elif type(self.width) == tuple:
+            angleRange = [
+                self.angle - self.width[0], self.angle + self.width[1]
+            ]
+        else:
+            raise TypeError("width must be int or tuple")
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                dx = j - self.center[0]
+                dy = i - self.center[1]
+                degree = self.atan2(dx, dy)
+                if angleRange[0] <= degree <= angleRange[1]:
+                    mask[i, j] = 0
+        return img * mask
 
 
 def showArrayRange(arr: np.ndarray) -> tuple:
