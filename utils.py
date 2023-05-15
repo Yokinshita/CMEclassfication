@@ -299,6 +299,7 @@ class CenterCrop:
         """
         self.value = value
         self.fmat = fmat
+        self.radius = radius
         if fmat == 'CHW':
             self.mask = np.full((512, 512), False, dtype=bool)
             for i in range(512):
@@ -332,8 +333,8 @@ class CenterCrop:
                 format(image.__class__.__name__))
 
     def __repr__(self):
-        string = self.__class__.__name__ + '(fmat:{}, set center value to {})'.format(
-            self.fmat, self.value)
+        string = self.__class__.__name__ + '(fmat:{}, Radius={}, CenterValue={})'.format(
+            self.fmat, self.radius, self.value)
         return string
 
 
