@@ -106,13 +106,16 @@ def savefig(array: np.ndarray, path: str, preffix='pic'):
             os.path.join(path, preffix + '{}.png'.format(i)))
 
 
-def drawImageArrays(*arrays, title: Optional[List[str]] = None):
+def drawImageArrays(*arrays,
+                    title: Optional[List[str]] = None,
+                    path: Optional[str] = None):
     '''绘制多个图像数组，这些图像数组的第一维应当相同，它们的形状为NHWC或NHW
 
     Parameters:
     -----------
     array : 待绘制的图像数组，形状为NHWC或NHW。
     title : 对每一个图像数组的标注，为str
+    path  : 图像保存的路径
     '''
     column = len(arrays)
     row = arrays[0].shape[0]
@@ -146,10 +149,14 @@ def drawImageArrays(*arrays, title: Optional[List[str]] = None):
                 plt.imshow(arrays[j][i], cmap='gray')  # 图片是灰度图的情况
             plt.xticks(())
             plt.yticks(())
+    if path:
+        plt.savefig(path, bbox_inches='tight', pad_inches=0.05)
     plt.show()
 
 
-def drawImageArrayInFlat(image: np.ndarray, cols=5) -> None:
+def drawImageArrayInFlat(image: np.ndarray,
+                         cols=5,
+                         path: Optional[str] = None) -> None:
     '''以平铺的布局绘制image数组
 
     Parameters
@@ -158,6 +165,8 @@ def drawImageArrayInFlat(image: np.ndarray, cols=5) -> None:
         需要绘制的数组，形状为NHW或NHWC
     cols : int, optional
         每一行绘制的图片数, by default 5
+    path : str, optional
+        图像保存的路径, by default None
     '''
     from math import ceil
     nums = len(image)
@@ -175,6 +184,8 @@ def drawImageArrayInFlat(image: np.ndarray, cols=5) -> None:
             ind += 1
             if ind >= nums:
                 break
+    if path:
+        plt.savefig(path, bbox_inches='tight', pad_inches=0.05)
     plt.show()
 
 
@@ -276,6 +287,38 @@ def applyMaskOnImage(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     for i in range(img.shape[0]):
         maskedArray[i] = cv2.bitwise_and(img[i], img[i], mask=mask[i])
     return maskedArray
+
+
+def maskImage(imgs: np.ndarray, mask: np.ndarray, mode=cv2.COLORMAP_AUTUMN):
+    '''以mask为遮罩，得到img被遮罩后的数组
+
+    Parameters
+    ----------
+    imgs : np.ndarray, uint8
+        原图像，形状为NHWC,值范围为[0,255]
+    mask : np.ndarray, uint8
+        遮罩，形状为NHW，值为0或1
+
+    Returns
+    -------
+    np.ndarray
+        原图被遮罩遮盖后的数组
+    '''
+    if not np.issubsctype(mask.dtype, np.uint8) or not np.issubdtype(
+            imgs.dtype, np.uint8):
+        raise ValueError(
+            'Input img and mask dtype both should be uint8, got {} and {}'.
+            format(imgs.dtype, mask.dtype))
+    imgAfterMask = np.zeros((imgs.shape[0], imgs.shape[1], imgs.shape[2], 3),
+                            dtype=np.uint8)
+    mask = mask * 255
+    for i in range(imgs.shape[0]):
+        maskColored = np.expand_dims(mask[i], axis=0).transpose(1, 2, 0)
+        maskColored = cv2.cvtColor(cv2.applyColorMap(maskColored, mode),
+                                   cv2.COLOR_BGR2RGB)
+        img = np.tile(imgs[i], (1, 1, 3))
+        imgAfterMask[i] = cv2.addWeighted(img, 0.5, maskColored, 0.5, 0.0)
+    return imgAfterMask
 
 
 class CenterCrop:
